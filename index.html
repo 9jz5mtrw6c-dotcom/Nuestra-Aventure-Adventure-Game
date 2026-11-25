@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1F4D3A">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Nuestra Aventura · El Cañón Escondido — V14 · routes van Nuestra Aventura</title>
+<title>Nuestra Aventura · El Cañón Escondido — V16 · alle 8 routes</title>
 <style>
   :root { --forest:#1F4D3A; --deep:#143628; --turq:#2BA8A4; --sand:#E8D5B0; --white:#FBF8F2; --terra:#D9774B; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -26,6 +26,13 @@
   .btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; border: 1px solid rgba(255,255,255,.2); background: rgba(20,54,40,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); cursor: pointer; font-size: 13px; font-weight: 700; }
   .btn svg { width: 22px; height: 22px; }
   .compass { position: absolute; top: calc(70px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); padding: 7px 14px; font-size: 13px; display: flex; gap: 8px; align-items: center; white-space: nowrap; max-width: calc(100vw - 24px); }
+  .compass.hard { white-space: normal; text-align: left; max-width: min(560px, calc(100vw - 24px)); }
+  .compass.hard small { display: block; font-size: 11px; opacity: .85; margin-top: 1px; }
+  .compass.hard .arrow { color: #ff7a5c; }
+  .photo { width: 100%; border: 6px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.25); transform: rotate(-1.2deg); border-radius: 2px; display: block; margin: 4px 0 8px; }
+  .medal { font-size: 18px; font-weight: 700; color: #1F4D3A; }
+  .clue-h { font-weight: 700; color: #1F4D3A; background: #eaf3ee; border-radius: 8px; padding: 6px 9px; }
+  .fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .4s; z-index: 40; } .fade.on { opacity: 1; }
   .compass .arrow { width: 22px; height: 22px; display: grid; place-items: center; transition: transform .15s linear; color: var(--sand); }
   @media (max-width: 640px) { .compass { top: calc(92px + env(safe-area-inset-top)); font-size: 12px; } .tl { padding: 8px 12px; } }
   .toast { position: absolute; left: 50%; top: 22%; transform: translate(-50%, -10px); text-align: center; padding: 16px 22px; opacity: 0; transition: all .4s; pointer-events: none; max-width: 86vw; }
@@ -177,6 +184,7 @@
   <div class="acts"><button class="act small" id="bAct">ABSEIL</button><button class="act small" id="bRun">RUN</button><button class="act" id="bJump">JUMP</button></div>
   <canvas class="minimap panel" id="map" aria-label="Map"></canvas>
   <div class="prompt panel" id="prompt"></div>
+  <div class="fade" id="fade"></div>
   <div class="keys panel" id="keys"></div>
 </div>
 <div class="photo-hint panel" id="photoHint"></div>
@@ -349,15 +357,19 @@ function cx(z) { return LV.cxA * Math.sin(z * 0.011 + LV.cxP) + 7 * Math.sin(z *
 function gorgeAmt(z) { const G = LV.gorge; return G ? smooth(G.z0 - 8, G.z0 + 4, z) * (1 - smooth(G.z1 - 4, G.z1 + 8, z)) : 0; }
 function riverW(z) {
   let w = LV.rw; for (const f of FALLS) w += (f.wide ?? 7) * smooth(f.z - 2, f.z + 8, z) * (1 - smooth(f.z + 22, f.z + 40, z));
+  if (LV.lake) w += LV.lake.w * (1 - smooth(LV.lake.z1 - 8, LV.lake.z1, z));
+  if (LV.bay) w += LV.bay.w * smooth(LV.bay.z0, LV.bay.z0 + 50, z);
   return LV.gorge ? mix(w, LV.gorge.w, gorgeAmt(z)) : w;
 }
 function baseSharp(z) { let b = 0; for (const f of FALLS) b -= f.drop * smooth(f.z - 0.6, f.z + 0.6, z); return b; }
 function baseSmooth(z) { let b = 0; for (const f of FALLS) b -= f.drop * smooth(f.z - 14, f.z + 16, z); return b; }
-function waterY(z) { return baseSharp(z) - 0.55; }
+function waterY(z) { return CAVE_ON ? caveWater() : LV.coast ? LV.seaY + TIDE.h : baseSharp(z) - 0.55; }
 function wallStart(z) { const ws = Math.max(24 + 5 * Math.sin(z * 0.043) + 3 * Math.sin(z * 0.11), riverW(z) + 15); return LV.gorge ? mix(ws, riverW(z) + .3, gorgeAmt(z)) : ws; }
 function rampAmt(x, z) { return (Math.sign(x - cx(z)) === RAMP.side) ? smooth(RAMP.z0, RAMP.z0 + 25, z) * (1 - smooth(RAMP.z1 - 25, RAMP.z1, z)) : 0; }
 
 function height(x, z) {
+  if (CAVE_ON) return caveGround(x, z);
+  if (LV.heightFn) return LV.heightFn(x, z);
   const c = cx(z), d = Math.abs(x - c), rw = riverW(z);
   const pool = FALLS.reduce((a, f) => a + 2.2 * smooth(f.z, f.z + 6, z) * (1 - smooth(f.z + 20, f.z + 34, z)), 0);
   const bed = baseSharp(z) - (LV.depth ? LV.depth(z) : 2.4) - pool;
@@ -374,6 +386,7 @@ function height(x, z) {
   h += (1 - ramp) * smooth(ws - 2, ws + 4, d) * (1 - smooth(ws + width, ws + width + 10, d)) * 3.5 * (fbm(x * .3, z * .3) - .5);
   // rim plateau undulation
   h += smooth(ws + width, ws + width + 20, d) * 6 * (fbm(x * .03, z * .03) - .3);
+  h += mountainH(x, z);
   // close the canyon at both ends
   h += 50 * (1 - smooth(Z0 - 10, Z0 + 14, z)) * smooth(4, 20, d) + 60 * smooth(Z1 - 18, Z1, z);
   return h;
@@ -640,8 +653,12 @@ function setLevelData(id) {
   MIRADOR = { x: 0, z: FAR, y: 0 };
   ABSEIL = { z: FAR, xt: 0, yt: 0, xe: 0, ye: 0, xb: 0, yb: 0, xa: 0, lo: 0, hi: 1 };
   SLIDE = { z0: FAR, z1: FAR + 1, off: 0, x() { return 0; }, y() { return 0; } };
+  if (LV.feat.slide) { const f = LV.feat.slide; SLIDE = { z0: f.z0, z1: f.z1, off: f.off, x(z) { return cx(z) + this.off; },
+    y(z) { return waterY(this.z0) + .05 - (waterY(this.z0) - waterY(this.z1)) * smooth(this.z0 + 6.5, this.z0 + 19, z); } }; }
+  CAVE_ON = false; TIDE.h = 0;
+  if (LV.setup) LV.setup();
   if (LV.feat.deck) {
-    const fd = LV.feat.deck, xa = cx(fd.za) + riverW(fd.za) + 3.5, xb = cx(fd.zb) + riverW(fd.zb) * .4;
+    const fd = LV.feat.deck, xa = fd.xa ?? cx(fd.za) + riverW(fd.za) + 3.5, xb = fd.xb ?? cx(fd.zb) + riverW(fd.zb) * .4;
     DECK = { xa, za: fd.za, xb, zb: fd.zb, y: height(xa, fd.za) + .3, w: 1.1, rock: !!fd.rock };
   } else DECK = { xa: 0, za: FAR, xb: 0, zb: FAR + 5, y: -999, w: .9 };
   if (LV.cave) { const c = LV.cave; c.x = cx(c.z) + c.side * (wallStart(c.z) - 3.6); c.y = height(c.x, c.z); }
@@ -757,6 +774,7 @@ function initNPCs() {
     const o = Object.assign({}, n, { anim: i * 1.7, speed: n.walk ? 1.05 + .15 * (i % 3) : 0, onGround: true, swim: false, mode: null, t: 0, vy: 0, ab: null,
       character: n.w ? 'woman' : 'man', dir: i % 2 ? 1 : -1 });
     if (n.walk) { o.z = mix(n.z0, Math.min(n.z1, 580), ((i * .37) % 1)); o.x = trailX(o.z, n.side) + n.off; }
+    else if (n.at) { o.x = n.at[0]; o.z = n.at[1]; o.face = n.at[2]; }
     else if (n.view) { o.x = LV.view.x - 1.5 + n.dx * .0; o.z = LV.view.z - 1 + n.dx; o.face = -Math.PI / 2; }
     o.y = height(o.x, o.z); return o;
   });
@@ -772,6 +790,1060 @@ function updateNPCs(dt) {
     n.y = height(n.x, n.z);
     if (n.view) n.y = Math.max(n.y, LV.view.y + .25);
   }
+}
+
+/* ============================================================ ROUTES 3 & 4 (compass routes)
+   No points on the map and no arrow to the next box: find your way with the compass,
+   the bearing + distance written in the notebook, and the meters walked since the last box. */
+function mtnRadius(k, th) { return [36, 24, 13][k] + 1.6 * Math.sin(3 * th + k * 2); }
+function mountainH(x, z) {
+  const M = LV.mtn; if (!M) return 0;
+  const dx = x - M.x, dz = z - M.z, r = Math.hypot(dx, dz); if (r > 54) return 0;
+  const th = Math.atan2(dz, dx), edge = 1 - smooth(44, 54, r);
+  let h = .42 * Math.max(0, 52 - r) * edge;
+  if (!M.noBands) for (let k = 0; k < 3; k++) { const rb = mtnRadius(k, th); h += 5.5 * (1 - smooth(rb - 1, rb + 1, r)); }
+  h += 1.4 * (1 - smooth(0, 4.5, r)) + 1.2 * (fbm(x * .15, z * .15) - .5) * edge;
+  return h;
+}
+function mtnBand(x, z) {
+  const M = LV.mtn; if (!M || M.noBands) return 0;
+  const dx = x - M.x, dz = z - M.z, r = Math.hypot(dx, dz); if (r > 42) return 0;
+  const th = Math.atan2(dz, dx); let b = 0;
+  for (let k = 0; k < 3; k++) b = Math.max(b, 1 - smooth(1.3, 2.8, Math.abs(r - mtnRadius(k, th))));
+  return b;
+}
+// a chain / rope line up a rock band: points from bottom to top along the surface
+function lineUp(x0, z0, x1, z1, n = 7, lift = .08) {
+  const pts = [];
+  for (let i = 0; i <= n; i++) { const t = i / n, x = mix(x0, x1, t), z = mix(z0, z1, t); pts.push([x, height(x, z) + lift, z]); }
+  return pts;
+}
+
+/* ------------------------------------------------------------ the cave (route 4) */
+// The cave is a closed tunnel mesh. Inside it, the ground, walls and water come from the tunnel
+// instead of the canyon heightfield (CAVE_ON), and the world is lit only by your head torch.
+let CAVE_ON = false, caveMesh = null;
+function caveSeg(x, z) {
+  const P = LV.cavePts; let best = null;
+  for (let i = 0; i < P.length - 1; i++) {
+    const a = P[i], b = P[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz;
+    const tr = ((x - a[0]) * dx + (z - a[1]) * dz) / L2, t = clamp(tr, 0, 1), px = a[0] + dx * t, pz = a[1] + dz * t;
+    let d = Math.hypot(x - px, z - pz);
+    if ((i === 0 && tr < -.12 / Math.sqrt(L2)) || (i === P.length - 2 && tr > 1 + .12 / Math.sqrt(L2))) d += 9;   // beyond the end walls
+    if (!best || d < best.d) best = { i, t, d, floor: mix(a[2], b[2], t), r: mix(a[3], b[3], t), h: mix(a[4], b[4], t) };
+  }
+  return best;
+}
+function caveGround(x, z) {
+  const s = caveSeg(x, z);
+  if (s.d > s.r - .35) return s.floor + 30;                      // rock wall
+  return s.floor + Math.max(0, s.d - (s.r - 1.4)) * .5 + .04 * Math.sin(x * 3.1) * Math.sin(z * 2.7);
+}
+function caveWater() { const s = caveSeg(S.x, S.z); return s.i >= 7 && s.i <= 10 ? LV.caveW : -9999; }
+function litProg() { return P.lit; }
+function buildCave() {
+  if (!LV.cavePts) return null;
+  const g = new Geo(), Q = LV.cavePts, N = 18;
+  let prev = -1, ring = 0;
+  const rockC = [.46, .38, .31];
+  for (let i = 0; i < Q.length - 1; i++) {
+    const a = Q[i], b = Q[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), steps = Math.max(2, Math.ceil(L / .6));
+    const tx = (b[0] - a[0]) / L, tz = (b[1] - a[1]) / L, nx = -tz, nz = tx;
+    for (let k = (i ? 1 : 0); k <= steps; k++) {
+      const t = k / steps, x = mix(a[0], b[0], t), z = mix(a[1], b[1], t), fl = mix(a[2], b[2], t), r = mix(a[3], b[3], t), h = mix(a[4], b[4], t);
+      const base = g.count;
+      for (let j = 0; j < N; j++) {
+        const an = j / N * Math.PI * 2, ca = Math.cos(an), sa = Math.sin(an);
+        const wob = 1 + .14 * (fbm(x * .5 + j * .7, z * .5 + ring * .03) - .5) * 2;
+        const ox = ca * r * wob, oy = sa >= 0 ? sa * h * (.85 + .3 * fbm(x * .3 + j, z * .3)) : -.04 + .1 * (1 - Math.abs(sa)) * Math.abs(ca);
+        const px = x + nx * ox, py = fl + oy, pz = z + nz * ox;
+        const cxp = x, cyp = fl + h * .45, czp = z, dl = Math.hypot(cxp - px, cyp - py, czp - pz) || 1;
+        const sh = .75 + .5 * fbm(px * .8, py * .8 + pz * .3), col = sa < -.2 ? [.40, .34, .28] : rockC.map(v => v * sh);
+        g.vert(px, py, pz, (cxp - px) / dl, (cyp - py) / dl, (czp - pz) / dl, col[0], col[1], col[2]);
+      }
+      if (prev >= 0) for (let j = 0; j < N; j++) { const j2 = (j + 1) % N; g.tri(prev + j, base + j, prev + j2); g.tri(prev + j2, base + j, base + j2); }
+      prev = base; ring++;
+    }
+  }
+  // end caps
+  for (const e of [0, Q.length - 1]) { const p = Q[e], c = [p[0], p[2] + p[4] * .45, p[1]];
+    const q = Q[e ? e - 1 : 1], d = Math.hypot(q[0] - p[0], q[1] - p[1]), ux = (p[0] - q[0]) / d, uz = (p[1] - q[1]) / d;
+    for (let j = 0; j < 12; j++) { const a0 = j / 12 * Math.PI * 2, a1 = (j + 1) / 12 * Math.PI * 2;
+      const P0 = [p[0] + ux * .3 - uz * Math.cos(a0) * p[3] * 1.1, p[2] + p[4] * (.45 + .6 * Math.sin(a0)), p[1] + uz * .3 + ux * Math.cos(a0) * p[3] * 1.1];
+      const P1 = [p[0] + ux * .3 - uz * Math.cos(a1) * p[3] * 1.1, p[2] + p[4] * (.45 + .6 * Math.sin(a1)), p[1] + uz * .3 + ux * Math.cos(a1) * p[3] * 1.1];
+      g.ftri(c, P0, P1, [.3, .25, .2]); } }
+  // stalactites, stalagmites, flowstone and sleeping bats in the chambers
+  seed = 77;
+  for (const ci of [4, 5, 12, 13]) {
+    const p = Q[ci];
+    for (let k = 0; k < 26; k++) {
+      const a = rnd() * Math.PI * 2, rr = rnd() * p[3] * .8, x = p[0] + Math.cos(a) * rr, z = p[1] + Math.sin(a) * rr, ceil = p[2] + p[4] * .85 * Math.sqrt(1 - (rr / p[3]) ** 2);
+      const len = .4 + rnd() * 1.4, col = [.72, .64, .52].map(v => v * (.85 + rnd() * .25));
+      g.cone(x, ceil + .2, z, .12 + rnd() * .15, -len - .2, 6, col, col.map(v => v * .85));
+      if (k % 3 === 0 && rr < p[3] - 1.8) { const fl = caveGround(x, z); g.cone(x, fl - .05, z, .2 + rnd() * .2, .4 + rnd() * .9, 6, col, col.map(v => v * .85)); }
+    }
+    if (ci === 4 || ci === 12) for (let k = 0; k < 7; k++) {  // bats: tiny dark folded wings hanging from the roof
+      const a = rnd() * Math.PI * 2, rr = rnd() * p[3] * .5, x = p[0] + Math.cos(a) * rr, z = p[1] + Math.sin(a) * rr, y = p[2] + p[4] * .8 - .1;
+      g.box(x, y - .12, z, .07, .22, .06, [.12, .1, .09], a); g.box(x, y - .02, z, .16, .05, .04, [.1, .08, .07], a);
+    }
+  }
+  return g.upload(litProg());
+}
+
+/* ------------------------------------------------------------- deer (route 4) */
+function deer(g, x, z, ry, buck) {
+  const y = height(x, z), co = Math.cos(ry), si = Math.sin(ry), W = (lx, lz) => [x + lx * co + lz * si, z - lx * si + lz * co];
+  const fur = [.55, .38, .24], dark = [.34, .24, .16], belly = [.82, .72, .58];
+  const B = (lx, ly, lz, sx, sy, sz, c) => { const p = W(lx, lz); g.box(p[0], y + ly, p[1], sx, sy, sz, c, ry); };
+  B(0, .98, 0, .36, .42, 1.05, fur); B(0, .8, 0, .3, .08, .9, belly);
+  for (const lx of [-.12, .12]) for (const lz of [-.4, .38]) B(lx, .4, lz, .08, .8, .09, dark);
+  B(0, 1.32, .5, .17, .46, .2, fur); B(0, 1.56, .66, .15, .17, .34, fur); B(0, 1.53, .84, .09, .1, .08, dark);
+  for (const lx of [-.08, .08]) B(lx, 1.7, .58, .05, .14, .05, dark);
+  B(0, 1.05, -.54, .1, .14, .05, [.95, .93, .88]);
+  if (buck) for (const lx of [-.07, .07]) { B(lx * 1.6, 1.86, .6, .03, .3, .03, [.78, .7, .55]); B(lx * 2.6, 1.98, .66, .03, .18, .03, [.78, .7, .55]); B(lx * 1.9, 2.0, .52, .03, .2, .03, [.78, .7, .55]); }
+  COLLIDERS.push({ x, z, r: .6 });
+}
+
+/* ------------------------------------------------------------ level data */
+Object.assign(LEVELS, {
+  chains: {
+    id: 'chains', num: 3, next: 'caves', hard: true, seed: 13, Z1: 620, cxA: 14, cxP: 2.2, rw: 3.2,
+    falls: [{ z: 118, drop: 1.4, wide: 2 }, { z: 330, drop: 1.8, wide: 2 }],
+    depth: () => 1.0,
+    ramp: { z0: 196, z1: 304, side: 1 },
+    spawn: { z: 140, side: 1, face: 0, camYaw: Math.PI },
+    jumpZone: [FAR, FAR], showerZ: null,
+    rock: [[0.78, 0.60, 0.46], [0.66, 0.50, 0.38], [0.90, 0.82, 0.70]],
+    feat: {},
+    letters: { start: 'A', lion: 'S', scramble: 'C', chain1: 'D', chain2: 'N', chain3: 'E', view: 'A' },
+    icon: { start: '🧭', lion: '🦁', scramble: '🪨', chain1: '⛓️', chain2: '🐐', chain3: '🔢', view: '🌊', summit: '📕' },
+    pz: { start: { kind: 'choice', correct: 1 }, lion: { kind: 'text', answers: ['leeuw', 'lion', 'leon'] }, scramble: { kind: 'simon', len: 6 },
+          chain1: { kind: 'order' }, chain2: { kind: 'text', cipher: true, answers: ['steenbok', 'berggeit', 'ibex', 'goat', 'cabra', 'cabramontes'] },
+          chain3: { kind: 'code', answer: '348' }, view: { kind: 'text', answers: ['zee', 'sea', 'mar', 'demiddellandsezee', 'middellandsezee', 'mediterraneo'] },
+          summit: { kind: 'text', final: true, answers: ['cadenas'] } },
+    setup() {
+      this.mtn = { z: 410 }; this.mtn.x = cx(410) + 98;
+      const M = this.mtn, at = (k, th, dr) => { const r = (k < 0 ? 0 : mtnRadius(k, th)) + dr; return [M.x + Math.cos(th) * r, M.z + Math.sin(th) * r]; };
+      this.chainTh = [-1.75, -.55, 1.05];
+      this.lines = this.chainTh.map((th, k) => { const a = at(k, th, 2.2), b = at(k, th, -1.8); return { kind: 'chain', req: 'chain' + (k + 1), pts: lineUp(a[0], a[1], b[0], b[1]) }; });
+      this.feet = this.chainTh.map((th, k) => at(k, th, 4.2));
+      this.lionRock = { z: 186 }; this.lionRock.x = cx(186) - (riverW(186) + 8); this.lionRock.y = height(this.lionRock.x, 186);
+      const sz = 256; this.scramble = { z: sz, x: cx(sz) + wallStart(sz) + 26 };
+      this.summitP = [M.x, M.z]; this.viewP = [M.x + 4.2, M.z + .6];
+      this._seaY = height(cx(410) + 148, 410) - 26;
+    },
+    stations() {
+      return [
+        { id: 'start', x: trailX(146), z: 146, r: 6 },
+        { id: 'lion', x: this.lionRock.x + 4, z: this.lionRock.z, r: 5 },
+        { id: 'scramble', x: this.scramble.x, z: this.scramble.z, r: 6 },
+        { id: 'chain1', x: this.feet[0][0], z: this.feet[0][1], r: 3.2 },
+        { id: 'chain2', x: this.feet[1][0], z: this.feet[1][1], r: 3.2 },
+        { id: 'chain3', x: this.feet[2][0], z: this.feet[2][1], r: 3.2 },
+        { id: 'view', x: this.viewP[0], z: this.viewP[1], r: 2.4 },
+        { id: 'summit', x: this.summitP[0], z: this.summitP[1], r: 2.2 }
+      ];
+    }
+  },
+  caves: {
+    id: 'caves', num: 4, next: null, hard: true, helmet: true, seed: 17, Z1: 620, cxA: 18, cxP: .6, rw: 4,
+    falls: [{ z: 232, drop: 2, wide: 3 }, { z: 430, drop: 2.5, wide: 3 }],
+    depth: () => 1.0,
+    spawn: { z: 40, side: 1, face: 0, camYaw: Math.PI },
+    jumpZone: [FAR, FAR], showerZ: null,
+    rock: [[0.72, 0.58, 0.46], [0.60, 0.48, 0.38], [0.86, 0.78, 0.66]],
+    feat: {},
+    letters: { start: 'N', deer: 'A', forest: 'L', ropes: 'E', hole: 'T', hall: 'R', drip: 'I', lake2: 'N' },
+    icon: { start: '🧭', deer: '🦌', forest: '🌲', ropes: '🪢', hole: '⛑️', hall: '🦇', drip: '💧', lake2: '🏊', treasure: '🔦' },
+    pz: { start: { kind: 'choice', correct: 2 }, deer: { kind: 'text', answers: ['gewei', 'geweien', 'antlers', 'antler', 'cornamenta', 'astas'] },
+          forest: { kind: 'code', answer: '543' }, ropes: { kind: 'order' }, hole: { kind: 'choice', correct: 1 },
+          hall: { kind: 'text', cipher: true, answers: ['vleermuis', 'bat', 'murcielago'] }, drip: { kind: 'pipes' },
+          lake2: { kind: 'text', answers: ['voetstappen', 'voetstap', 'footsteps', 'footstep', 'pasos', 'huellas'] },
+          treasure: { kind: 'text', final: true, answers: ['linterna'] } },
+    setup() {
+      const z = 300, ws = wallStart(z), c = cx(z);
+      this.ledge = { z, x: c + ws + 2.3, y: height(c + ws + 3.0, z) };
+      this.hole = { z, x: c + ws + 3.0, y: this.ledge.y };
+      this.lines = [{ kind: 'rope', req: 'ropes', pts: lineUp(c + ws - 1.6, z + .4, c + ws + 1.5, z + .4, 8, .12).map((p, i, a) => i === a.length - 1 ? [p[0], this.ledge.y + .05, p[2]] : p) }];
+      this.ropeFoot = [c + ws - 3.6, z + .4];
+      const E = [c + ws + 3.6, z], Y = this.ledge.y;
+      const rel = [[0, 0, 0, 1.0, 2.3], [5, .5, -2.6, .95, 2.1], [10, 2, -5.5, 1.0, 2.2], [15, 4, -7.5, 1.6, 3], [21, 6, -8.5, 6, 6.5], [29, 5, -8.8, 5.5, 6],
+                   [35, 1, -9.2, 1.8, 2.8], [41, -4, -9.8, 1.5, 2.6], [46, -9, -10.6, 2.2, 3.4], [52, -14, -12.8, 2.6, 3.8], [58, -19, -13.4, 2.6, 3.8],
+                   [63, -24, -10.4, 2.4, 3.4], [69, -28, -10, 5.5, 5.5], [75, -30, -10, 4.5, 4.5]];
+      this.cavePts = rel.map(p => [E[0] + p[0], E[1] + p[1], Y + p[2], p[3], p[4]]);
+      this.caveW = Y - 11.0;
+      this.exit2 = { z: 268 }; this.exit2.x = cx(268) + riverW(268) + 4;
+      this.deerPos = [[60, 1, 1.2, 1], [78, -1, -.6, 0], [95, 1, 2.6, 0], [112, -1, .4, 1], [131, 1, -2.2, 0]];
+    },
+    stations() {
+      const P = this.cavePts, mid = (i, j, t = .5) => [mix(P[i][0], P[j][0], t), mix(P[i][1], P[j][1], t)];
+      const h = mid(4, 5, .3), d = mid(6, 7, .5), w = mid(9, 10, .5), f = P[12];
+      return [
+        { id: 'start', x: trailX(46), z: 46, r: 6 },
+        { id: 'deer', x: trailX(104) - 1, z: 104, r: 6 },
+        { id: 'forest', x: cx(196) + riverW(196) + 16, z: 196, r: 5 },
+        { id: 'ropes', x: this.ropeFoot[0], z: this.ropeFoot[1], r: 3.2 },
+        { id: 'hole', x: this.ledge.x, z: this.ledge.z, r: 2.2, minY: this.ledge.y - .5 },
+        { id: 'hall', x: h[0], z: h[1], r: 3.5, cave: true },
+        { id: 'drip', x: d[0], z: d[1], r: 2.4, cave: true },
+        { id: 'lake2', x: w[0], z: w[1], r: 3.2, cave: true, swim: true },
+        { id: 'treasure', x: f[0], z: f[1], r: 3.2, cave: true }
+      ];
+    }
+  }
+});
+
+Object.assign(LVTXT, {
+  chains: {
+    nl: {
+      name: 'The Chains', short: 'The Chains',
+      lead: 'Een berg met vreemde rotsvormen, klauteren over rotsblokken en drie stukken waar je je aan kettingen omhoog trekt. Op de top schrijf je je naam in het boekje en kijk je uit tot aan de zee. Let op: dit is een kompasroute. Er staan geen punten op de kaart en er is geen pijl naar het volgende kistje. In je notitieboek staat steeds hoeveel meter en welke richting het volgende kistje ligt.',
+      fine: 'Geïnspireerd op de tour “The Chains” van Nuestra Aventura. Een virtuele, vereenvoudigde versie – geen echte kaart.',
+      stamps: [['start', 'Het kompas', 'Lees je kompas en zoek de richting van de top.'], ['lion', 'De Leeuwenrots', 'Een rots die als een uitkijkpost boven de kloof uitsteekt.'], ['scramble', 'Klauteren', 'Halverwege de rotsige helling omhoog uit de kloof.'],
+        ['chain1', 'De eerste ketting', 'Aan de voet van de eerste rotsband van de berg.'], ['chain2', 'De tweede ketting', 'Op het terras boven de eerste ketting, verder om de berg heen.'], ['chain3', 'De derde ketting', 'Op het hoogste terras, aan de zonkant van de berg.'],
+        ['view', 'Uitzicht tot aan zee', 'Op de top, aan de oostkant.'], ['summit', 'Het topboekje', 'Het kistje met het boekje op het hoogste punt.']],
+      hints: { start: 'Bij het startbord, vlak bij waar je begint.', lion: 'Aan de overkant van het beekje steekt een rots uit als een uitkijkpost.', scramble: 'Klim via de rotsige helling uit de kloof. Het kistje ligt halverwege tussen de rotsblokken.', chain1: 'Aan de voet van de eerste rotsband van de berg, waar een ketting omhoog loopt.', chain2: 'Boven de eerste ketting: loop over het terras om de berg heen naar de tweede ketting.', chain3: 'Op het volgende terras, nog verder om de berg heen.', view: 'Op de top, een paar meter naar het oosten.', summit: 'Het hoogste punt van de berg.' },
+      nbIntroT: 'The Chains', nbIntro: 'Vandaag geen kaart met punten. Ik heb alleen mijn kompas. Bij elk kistje schrijf ik op hoe ver en in welke richting het volgende ligt. Graden tel je met de klok mee vanaf het noorden: 0° = noord, 90° = oost, 180° = zuid, 270° = west.',
+      finalT: 'Een nieuwe pagina!', finalSub: 'Route 4 · Exploring Caves',
+      finalText: 'In het topboekje vind je een briefje: “Een kloof met herten, een bos, en hoog in de rotswand een gat waar je met touwen naartoe klimt. Neem een helm en een zaklamp mee: daarachter ligt een grot, en als je durft te zwemmen nog een tweede.”',
+      finalBtn: 'Begin Route 4 · Exploring Caves',
+      pz: {
+        start: { t: 'Lees je kompas', s: 'Bij het startbord ligt een kistje. Op het deksel: “Wie de top wil vinden, moet eerst weten waar hij ligt.” Kijk op het kompas rechtsboven.', c: 'Je kijkt precies naar het zuiden (180°). Welke richting is dan aan je linkerhand?', opts: ['West', 'Oost', 'Noord'] },
+        lion: { t: 'Raadsel bij de Leeuwenrots', s: 'De rots steekt uit over de kloof, net als in een beroemde tekenfilm over een koning van de dieren.', c: 'Ik heb manen maar ik kam me nooit. Ik ben koning, maar ik heb geen kroon. Wat ben ik?' },
+        scramble: { t: 'De klauterstenen', s: 'Tussen de rotsblokken liggen vier gekleurde stenen. Ze lichten op in een vaste volgorde – zes keer dit keer.', c: 'Onthoud de volgorde en tik de stenen daarna na.' },
+        chain1: { t: 'Veilig aan de ketting', s: 'De eerste ketting. Op een bordje staan de regels door elkaar.', c: 'Zet de stappen in de goede volgorde.', steps: ['Kijk of de ketting goed vastzit', 'Pak de ketting met twee handen', 'Zet je voeten stevig op de rots', 'Altijd drie punten contact: twee handen en een voet, of twee voeten en een hand', 'Wacht boven tot de volgende er ook is'] },
+        chain2: { t: 'Geheimschrift bij de tweede ketting', s: 'In de rots is een woord gekrast. Elke letter is één plek in het alfabet opgeschoven.', c: 'Het dier dat zonder ketting over deze rotsen klimt.', code: 'TUFFOCPL' },
+        chain3: { t: 'Het slot bij de derde ketting', s: 'Het laatste stuk ketting. Het kistje heeft een cijferslot.', c: 'Code = het aantal kettingen op deze berg · het aantal hoofdrichtingen op je kompas · het aantal routes in dit spel.' },
+        view: { t: 'Uitzicht vanaf de top', s: 'Je staat boven op de berg. Ver in het oosten glinstert iets blauws tot aan de horizon.', c: 'Wat zie je daar in de verte?' },
+        summit: { t: 'Het topboekje', s: 'In het kistje op de top ligt het boekje waarin iedereen zijn naam schrijft – maar het zit op slot. Gebruik de letters uit je paspoort.', c: 'In het Spaans: waar je je vandaag aan omhoog trok.' }
+      }
+    },
+    en: {
+      name: 'The Chains', short: 'The Chains',
+      lead: 'A mountain with strange rock formations, scrambling over boulders and three sections where you pull yourself up on chains. At the summit you write your name in the little book and look out all the way to the sea. Note: this is a compass route. There are no points on the map and no arrow to the next box. Your notebook always tells you how many metres away and in which direction the next box lies.',
+      fine: 'Inspired by the “The Chains” tour by Nuestra Aventura. A simplified virtual version – not a real map.',
+      stamps: [['start', 'The compass', 'Read your compass and find the direction of the summit.'], ['lion', 'The Lion Rock', 'A rock sticking out above the canyon like a lookout.'], ['scramble', 'Scrambling', 'Halfway up the rocky slope out of the canyon.'],
+        ['chain1', 'The first chain', 'At the foot of the mountain’s first rock band.'], ['chain2', 'The second chain', 'On the terrace above the first chain, further round the mountain.'], ['chain3', 'The third chain', 'On the highest terrace, on the sunny side of the mountain.'],
+        ['view', 'View to the sea', 'On the summit, on the east side.'], ['summit', 'The summit book', 'The box with the book at the highest point.']],
+      hints: { start: 'At the start sign, close to where you begin.', lion: 'On the other side of the stream a rock sticks out like a lookout.', scramble: 'Climb the rocky slope out of the canyon. The box lies halfway up between the boulders.', chain1: 'At the foot of the mountain’s first rock band, where a chain leads up.', chain2: 'Above the first chain: walk along the terrace round the mountain to the second chain.', chain3: 'On the next terrace, even further round the mountain.', view: 'On the summit, a few metres to the east.', summit: 'The highest point of the mountain.' },
+      nbIntroT: 'The Chains', nbIntro: 'No map with points today. All I have is my compass. At every box I write down how far and in which direction the next one is. Degrees are counted clockwise from north: 0° = north, 90° = east, 180° = south, 270° = west.',
+      finalT: 'A new page!', finalSub: 'Route 4 · Exploring Caves',
+      finalText: 'In the summit book you find a note: “A canyon with deer, a forest, and high up in the rock wall a hole you climb to with ropes. Bring a helmet and a torch: behind it lies a cave – and, if you dare to swim, a second one.”',
+      finalBtn: 'Start Route 4 · Exploring Caves',
+      pz: {
+        start: { t: 'Read your compass', s: 'A box lies by the start sign. On the lid: “If you want to find the summit, first know where it is.” Check the compass at the top right.', c: 'You are facing exactly south (180°). Which direction is on your left?', opts: ['West', 'East', 'North'] },
+        lion: { t: 'Riddle at the Lion Rock', s: 'The rock juts out over the canyon, just like in a famous cartoon about a king of the animals.', c: 'I have a mane but never comb it. I am king but wear no crown. What am I?' },
+        scramble: { t: 'The scrambling stones', s: 'Four coloured stones lie between the boulders. They light up in a fixed order – six times this time.', c: 'Remember the order, then tap the stones in the same order.' },
+        chain1: { t: 'Safe on the chain', s: 'The first chain. The rules on a small sign are mixed up.', c: 'Put the steps in the right order.', steps: ['Check that the chain is firmly fixed', 'Hold the chain with both hands', 'Place your feet firmly on the rock', 'Always three points of contact: two hands and a foot, or two feet and a hand', 'Wait at the top until the next person is up too'] },
+        chain2: { t: 'Secret code at the second chain', s: 'A word is scratched into the rock. Every letter has moved one place in the alphabet.', c: 'The animal that climbs these rocks without a chain.', code: 'JCFY' },
+        chain3: { t: 'The lock at the third chain', s: 'The last chain section. The box has a number lock.', c: 'Code = the number of chains on this mountain · the number of main directions on your compass · the number of routes in this game.' },
+        view: { t: 'View from the summit', s: 'You are standing on top of the mountain. Far to the east something blue glitters all the way to the horizon.', c: 'What do you see there in the distance?' },
+        summit: { t: 'The summit book', s: 'The box on the summit holds the book everybody writes their name in – but it is locked. Use the letters in your passport.', c: 'In Spanish: what you pulled yourself up on today.' }
+      }
+    },
+    es: {
+      name: 'The Chains', short: 'The Chains',
+      lead: 'Una montaña con rocas de formas extrañas, trepar entre bloques y tres tramos en los que subes agarrado a cadenas. En la cima escribes tu nombre en el librito y ves hasta el mar. Atención: es una ruta de brújula. No hay puntos en el mapa ni flecha hacia la siguiente caja. En tu cuaderno siempre pone a cuántos metros y en qué dirección está la siguiente.',
+      fine: 'Inspirado en el tour “The Chains” de Nuestra Aventura. Versión virtual simplificada – no es un mapa real.',
+      stamps: [['start', 'La brújula', 'Lee tu brújula y busca la dirección de la cima.'], ['lion', 'La Roca del León', 'Una roca que sobresale sobre el cañón como un mirador.'], ['scramble', 'Trepar', 'A media subida de la ladera rocosa que sale del cañón.'],
+        ['chain1', 'La primera cadena', 'Al pie de la primera franja de roca de la montaña.'], ['chain2', 'La segunda cadena', 'En la terraza sobre la primera cadena, rodeando la montaña.'], ['chain3', 'La tercera cadena', 'En la terraza más alta, en la cara soleada de la montaña.'],
+        ['view', 'Vista hasta el mar', 'En la cima, en el lado este.'], ['summit', 'El libro de cumbre', 'La caja con el libro en el punto más alto.']],
+      hints: { start: 'Junto al cartel de salida, cerca de donde empiezas.', lion: 'Al otro lado del arroyo sobresale una roca como un mirador.', scramble: 'Sube por la ladera rocosa que sale del cañón. La caja está a media subida entre los bloques.', chain1: 'Al pie de la primera franja de roca de la montaña, donde sube una cadena.', chain2: 'Sobre la primera cadena: rodea la montaña por la terraza hasta la segunda cadena.', chain3: 'En la terraza siguiente, rodeando aún más la montaña.', view: 'En la cima, unos metros hacia el este.', summit: 'El punto más alto de la montaña.' },
+      nbIntroT: 'The Chains', nbIntro: 'Hoy no hay mapa con puntos. Solo tengo mi brújula. En cada caja apunto a qué distancia y en qué dirección está la siguiente. Los grados se cuentan en el sentido del reloj desde el norte: 0° = norte, 90° = este, 180° = sur, 270° = oeste.',
+      finalT: '¡Una página nueva!', finalSub: 'Ruta 4 · Exploring Caves',
+      finalText: 'En el libro de cumbre encuentras una nota: «Un cañón con ciervos, un bosque y, en lo alto de la pared, un agujero al que se sube con cuerdas. Lleva casco y linterna: detrás hay una cueva y, si te atreves a nadar, una segunda».',
+      finalBtn: 'Empezar Ruta 4 · Exploring Caves',
+      pz: {
+        start: { t: 'Lee tu brújula', s: 'Junto al cartel de salida hay una caja. En la tapa: «Quien quiera encontrar la cima, primero debe saber dónde está». Mira la brújula de arriba a la derecha.', c: 'Miras exactamente al sur (180°). ¿Qué dirección tienes a tu izquierda?', opts: ['Oeste', 'Este', 'Norte'] },
+        lion: { t: 'Enigma en la Roca del León', s: 'La roca sobresale sobre el cañón, como en unos famosos dibujos animados sobre un rey de los animales.', c: 'Tengo melena pero nunca me peino. Soy rey pero no llevo corona. ¿Qué soy?' },
+        scramble: { t: 'Las piedras para trepar', s: 'Entre los bloques hay cuatro piedras de colores. Se iluminan en un orden fijo – esta vez seis veces.', c: 'Recuerda el orden y toca después las piedras igual.' },
+        chain1: { t: 'Seguro en la cadena', s: 'La primera cadena. Las normas de un cartel están desordenadas.', c: 'Ordena los pasos.', steps: ['Comprueba que la cadena está bien sujeta', 'Agarra la cadena con las dos manos', 'Apoya bien los pies en la roca', 'Siempre tres puntos de apoyo: dos manos y un pie, o dos pies y una mano', 'Espera arriba a que suba el siguiente'] },
+        chain2: { t: 'Código en la segunda cadena', s: 'En la roca hay una palabra grabada. Cada letra se ha movido un lugar en el alfabeto.', c: 'El animal que trepa por estas rocas sin cadena.', code: 'DBCSB' },
+        chain3: { t: 'El candado de la tercera cadena', s: 'El último tramo de cadena. La caja tiene un candado de números.', c: 'Código = las cadenas de esta montaña · los puntos cardinales de tu brújula · las rutas de este juego.' },
+        view: { t: 'Vista desde la cima', s: 'Estás en lo alto de la montaña. Muy al este algo azul brilla hasta el horizonte.', c: '¿Qué ves allí a lo lejos?' },
+        summit: { t: 'El libro de cumbre', s: 'En la caja de la cima está el libro donde todos escriben su nombre, pero tiene candado. Usa las letras de tu pasaporte.', c: 'Aquello a lo que te has agarrado hoy para subir.' }
+      }
+    }
+  },
+  caves: {
+    nl: {
+      name: 'Exploring Caves', short: 'Exploring Caves',
+      lead: 'Een kloof waar herten grazen, een bos, en hoog in de rotswand een gat waar je met touwen naartoe klimt. Zet je helm op en doe je zaklamp aan: je daalt door een smalle gang af in een grot. Wie durft zwemt door het water naar een tweede grot. Ook dit is een kompasroute: geen punten op de kaart, alleen richting en afstand in je notitieboek – ook onder de grond.',
+      fine: 'Geïnspireerd op de tour “Exploring Caves” van Nuestra Aventura. Een virtuele, vereenvoudigde versie – geen echte kaart.',
+      stamps: [['start', 'Welke kant op?', 'Lees je kompas bij het startbord.'], ['deer', 'De herten', 'Halverwege de kloof, waar de herten grazen.'], ['forest', 'Het bos', 'Een open plek in het bos op de oostoever.'], ['ropes', 'De touwen', 'Aan de voet van de rotswand, waar de touwen hangen.'],
+        ['hole', 'Het gat in de rots', 'Bovenaan de touwen, voor de ingang van de grot.'], ['hall', 'De grote zaal', 'De eerste grote ruimte in de grot.'], ['drip', 'De druipgang', 'Een smalle gang achter de zaal.'], ['lake2', 'Zwemmen naar de tweede grot', 'Door het water in de onderaardse gang.'], ['treasure', 'De tweede grot', 'De zaal aan de overkant van het water.']],
+      hints: { start: 'Bij het startbord, vlak bij waar je begint.', deer: 'Volg de kloof. Tel onderweg de herten – dat heb je straks nodig!', forest: 'Een open plek tussen de bomen op de oostoever.', ropes: 'Aan de voet van de oostwand. Kijk omhoog: zie je het donkere gat?', hole: 'Klim met de touwen omhoog naar de richel.', hall: 'Daal af door de smalle gang tot de ruimte groot wordt.', drip: 'Achter de grote zaal wordt de gang weer smal.', lake2: 'Verderop staat de gang onder water. Zwem!', treasure: 'Aan de overkant van het water ligt de tweede grot.' },
+      nbIntroT: 'Exploring Caves', nbIntro: 'Weer een kompasroute. Onder de grond werkt je kompas gewoon – de richting en afstand naar het volgende kistje staan hier. 0° = noord, 90° = oost, 180° = zuid, 270° = west.',
+      finalT: 'Een nieuwe pagina!', finalSub: 'Route 5 · The Power of Water',
+      finalText: 'In de schatkist ligt een nieuwe schets: een groot stuwmeer met een uitkijkpunt, een dorpje van de mensen die er werkten, en een rivier met een waterval en een natuurlijke glijbaan van rots.',
+      finalSoon: 'Route 5 is nog niet gebouwd – die volgt in de volgende ronde.',
+      caveIn: 'E · De grot in', caveInT: 'Tik GROT IN', caveOut: 'E · Naar buiten', caveOutT: 'Tik NAAR BUITEN', caveBtnIn: 'GROT IN', caveBtnOut: 'BUITEN',
+      pz: {
+        start: { t: 'Welke kant op?', s: 'Bij het startbord ligt een kistje. Het briefje zegt: “Volg de kloof stroomafwaarts naar de herten.”', c: 'In welke richting loop je de kloof in? Kijk op je kompas.', opts: ['Noord', 'Oost', 'Zuid', 'West'] },
+        deer: { t: 'Raadsel bij de herten', s: 'Een paar herten kijken je aan en grazen dan rustig verder. Op een steen staat een raadsel.', c: 'De mannetjes dragen mij op hun kop. Elk voorjaar vallen ik af en groei ik opnieuw. Wat ben ik?' },
+        forest: { t: 'Het slot in het bos', s: 'Op een open plek in het bos staat een kistje met een cijferslot.', c: 'Code = het aantal herten dat je in de kloof zag · het aantal letters van het woord “grot” · het aantal talen van dit spel.' },
+        ropes: { t: 'Klimmen met touwen', s: 'Aan de rotswand hangen vaste touwen naar een gat hoog in de rots.', c: 'Zet de stappen in de goede volgorde.', steps: ['Helm op en vastmaken', 'Controleer of het touw goed vastzit', 'Pak het touw met twee handen', 'Loop rustig omhoog, voeten tegen de rots', 'Boven op de richel blijven staan'] },
+        hole: { t: 'Voor de ingang van de grot', s: 'Je staat op de richel voor een donker gat. Erachter gaat een smalle gang naar beneden.', c: 'Wat neem je mee de grot in?', opts: ['Zonnebril en slippers', 'Helm en zaklamp', 'Alleen je telefoon'] },
+        hall: { t: 'Geheimschrift in de grote zaal', s: 'In het licht van je zaklamp zie je een woord op de wand. Elke letter is één plek in het alfabet opgeschoven.', c: 'Het dier dat hier ondersteboven aan het plafond slaapt.', code: 'WMFFSNVJT' },
+        drip: { t: 'De druipgang', s: 'Water druppelt van het plafond in een stenen goot – maar die ligt in stukken.', c: 'Leid het water van de bovenste naar de onderste opening.' },
+        lake2: { t: 'Raadsel in het water', s: 'Je zwemt door de onderaardse gang. Op een rots boven het water staat een raadsel.', c: 'Hoe meer je er maakt, hoe meer je er achterlaat. Wat zijn het?' },
+        treasure: { t: 'De schatkist', s: 'In de tweede grot staat een kist met een letterslot. Gebruik de letters uit je paspoort.', c: 'In het Spaans: zonder dit ding zie je hier helemaal niets.' }
+      }
+    },
+    en: {
+      name: 'Exploring Caves', short: 'Exploring Caves',
+      lead: 'A canyon where deer graze, a forest, and high in the rock wall a hole you climb to with ropes. Put on your helmet and switch on your torch: a narrow passage leads down into a cave. If you dare, swim through the water to a second cave. This is a compass route too: no points on the map, only direction and distance in your notebook – even underground.',
+      fine: 'Inspired by the “Exploring Caves” tour by Nuestra Aventura. A simplified virtual version – not a real map.',
+      stamps: [['start', 'Which way?', 'Read your compass at the start sign.'], ['deer', 'The deer', 'Halfway along the canyon, where the deer graze.'], ['forest', 'The forest', 'A clearing in the forest on the east bank.'], ['ropes', 'The ropes', 'At the foot of the rock wall, where the ropes hang.'],
+        ['hole', 'The hole in the rock', 'At the top of the ropes, in front of the cave entrance.'], ['hall', 'The great hall', 'The first big chamber in the cave.'], ['drip', 'The drip passage', 'A narrow passage behind the hall.'], ['lake2', 'Swim to the second cave', 'Through the water in the underground passage.'], ['treasure', 'The second cave', 'The chamber on the other side of the water.']],
+      hints: { start: 'At the start sign, close to where you begin.', deer: 'Follow the canyon. Count the deer on the way – you will need it later!', forest: 'A clearing among the trees on the east bank.', ropes: 'At the foot of the east wall. Look up: can you see the dark hole?', hole: 'Climb the ropes up to the ledge.', hall: 'Go down the narrow passage until the space opens up.', drip: 'Behind the great hall the passage narrows again.', lake2: 'Further on the passage is flooded. Swim!', treasure: 'The second cave lies on the other side of the water.' },
+      nbIntroT: 'Exploring Caves', nbIntro: 'Another compass route. Underground your compass works just the same – the direction and distance to the next box are written here. 0° = north, 90° = east, 180° = south, 270° = west.',
+      finalT: 'A new page!', finalSub: 'Route 5 · The Power of Water',
+      finalText: 'The treasure chest holds a new sketch: a large reservoir with a viewpoint, a little village of the people who worked there, and a river with a waterfall and a natural rock slide.',
+      finalSoon: 'Route 5 is not built yet – it follows in the next round.',
+      caveIn: 'E · Enter the cave', caveInT: 'Tap ENTER', caveOut: 'E · Go outside', caveOutT: 'Tap OUTSIDE', caveBtnIn: 'ENTER', caveBtnOut: 'OUTSIDE',
+      pz: {
+        start: { t: 'Which way?', s: 'A box lies by the start sign. The note says: “Follow the canyon downstream to the deer.”', c: 'In which direction do you walk into the canyon? Check your compass.', opts: ['North', 'East', 'South', 'West'] },
+        deer: { t: 'Riddle by the deer', s: 'A few deer look at you, then calmly carry on grazing. A riddle is written on a stone.', c: 'The males carry me on their heads. Every spring I fall off and grow again. What am I?' },
+        forest: { t: 'The lock in the forest', s: 'In a clearing in the forest stands a box with a number lock.', c: 'Code = the number of deer you saw in the canyon · the number of letters in the word “cave” · the number of languages in this game.' },
+        ropes: { t: 'Climbing with ropes', s: 'Fixed ropes hang down the rock wall to a hole high up in the rock.', c: 'Put the steps in the right order.', steps: ['Put on your helmet and buckle it', 'Check that the rope is firmly fixed', 'Hold the rope with both hands', 'Walk up calmly, feet against the rock', 'Stay standing on the ledge at the top'] },
+        hole: { t: 'At the cave entrance', s: 'You stand on the ledge in front of a dark hole. Behind it a narrow passage leads down.', c: 'What do you take into the cave?', opts: ['Sunglasses and flip-flops', 'Helmet and torch', 'Just your phone'] },
+        hall: { t: 'Secret code in the great hall', s: 'In the beam of your torch you see a word on the wall. Every letter has moved one place in the alphabet.', c: 'The animal that sleeps upside down on the ceiling here.', code: 'CBU' },
+        drip: { t: 'The drip passage', s: 'Water drips from the ceiling into a stone channel – but it is broken.', c: 'Guide the water from the top opening to the bottom one.' },
+        lake2: { t: 'Riddle in the water', s: 'You swim through the underground passage. A riddle is written on a rock above the water.', c: 'The more you take, the more you leave behind. What are they?' },
+        treasure: { t: 'The treasure chest', s: 'In the second cave stands a chest with a letter lock. Use the letters in your passport.', c: 'In Spanish: without this thing you would see nothing at all down here.' }
+      }
+    },
+    es: {
+      name: 'Exploring Caves', short: 'Exploring Caves',
+      lead: 'Un cañón donde pastan ciervos, un bosque y, en lo alto de la pared, un agujero al que se sube con cuerdas. Ponte el casco y enciende la linterna: un pasadizo estrecho baja a una cueva. Si te atreves, nada por el agua hasta una segunda cueva. También es una ruta de brújula: sin puntos en el mapa, solo dirección y distancia en tu cuaderno, incluso bajo tierra.',
+      fine: 'Inspirado en el tour “Exploring Caves” de Nuestra Aventura. Versión virtual simplificada – no es un mapa real.',
+      stamps: [['start', '¿Hacia dónde?', 'Lee tu brújula junto al cartel de salida.'], ['deer', 'Los ciervos', 'A mitad del cañón, donde pastan los ciervos.'], ['forest', 'El bosque', 'Un claro del bosque en la orilla este.'], ['ropes', 'Las cuerdas', 'Al pie de la pared de roca, donde cuelgan las cuerdas.'],
+        ['hole', 'El agujero en la roca', 'Arriba de las cuerdas, ante la entrada de la cueva.'], ['hall', 'La gran sala', 'La primera sala grande de la cueva.'], ['drip', 'El pasadizo del goteo', 'Un pasadizo estrecho detrás de la sala.'], ['lake2', 'Nadar a la segunda cueva', 'Por el agua del pasadizo subterráneo.'], ['treasure', 'La segunda cueva', 'La sala al otro lado del agua.']],
+      hints: { start: 'Junto al cartel de salida, cerca de donde empiezas.', deer: 'Sigue el cañón. Cuenta los ciervos por el camino: ¡lo necesitarás después!', forest: 'Un claro entre los árboles de la orilla este.', ropes: 'Al pie de la pared este. Mira arriba: ¿ves el agujero oscuro?', hole: 'Sube con las cuerdas hasta la cornisa.', hall: 'Baja por el pasadizo estrecho hasta que el espacio se abra.', drip: 'Detrás de la gran sala el pasadizo se estrecha otra vez.', lake2: 'Más adelante el pasadizo está inundado. ¡Nada!', treasure: 'La segunda cueva está al otro lado del agua.' },
+      nbIntroT: 'Exploring Caves', nbIntro: 'Otra ruta de brújula. Bajo tierra la brújula funciona igual: aquí están la dirección y la distancia hasta la siguiente caja. 0° = norte, 90° = este, 180° = sur, 270° = oeste.',
+      finalT: '¡Una página nueva!', finalSub: 'Ruta 5 · The Power of Water',
+      finalText: 'En el cofre hay un nuevo dibujo: un gran embalse con un mirador, un pueblecito de la gente que trabajó allí y un río con una cascada y un tobogán natural de roca.',
+      finalSoon: 'La ruta 5 aún no está construida: llegará en la próxima ronda.',
+      caveIn: 'E · Entrar en la cueva', caveInT: 'Toca ENTRAR', caveOut: 'E · Salir', caveOutT: 'Toca SALIR', caveBtnIn: 'ENTRAR', caveBtnOut: 'SALIR',
+      pz: {
+        start: { t: '¿Hacia dónde?', s: 'Junto al cartel de salida hay una caja. La nota dice: «Sigue el cañón río abajo hasta los ciervos».', c: '¿En qué dirección entras en el cañón? Mira tu brújula.', opts: ['Norte', 'Este', 'Sur', 'Oeste'] },
+        deer: { t: 'Enigma junto a los ciervos', s: 'Unos ciervos te miran y siguen pastando tranquilos. En una piedra hay un enigma.', c: 'Los machos me llevan en la cabeza. Cada primavera me caigo y vuelvo a crecer. ¿Qué soy?' },
+        forest: { t: 'El candado del bosque', s: 'En un claro del bosque hay una caja con candado de números.', c: 'Código = los ciervos que viste en el cañón · las letras de la palabra «gruta» menos una · los idiomas de este juego.' },
+        ropes: { t: 'Subir con cuerdas', s: 'Por la pared cuelgan cuerdas fijas hasta un agujero en lo alto de la roca.', c: 'Ordena los pasos.', steps: ['Ponte el casco y abróchalo', 'Comprueba que la cuerda está bien sujeta', 'Agarra la cuerda con las dos manos', 'Sube con calma, pies contra la roca', 'Quédate de pie en la cornisa de arriba'] },
+        hole: { t: 'Ante la entrada de la cueva', s: 'Estás en la cornisa frente a un agujero oscuro. Detrás, un pasadizo estrecho baja.', c: '¿Qué te llevas a la cueva?', opts: ['Gafas de sol y chanclas', 'Casco y linterna', 'Solo el móvil'] },
+        hall: { t: 'Código en la gran sala', s: 'Con la luz de tu linterna ves una palabra en la pared. Cada letra se ha movido un lugar en el alfabeto.', c: 'El animal que duerme aquí boca abajo en el techo.', code: 'NVSDJFMBHP' },
+        drip: { t: 'El pasadizo del goteo', s: 'El agua gotea del techo en un canal de piedra, pero está roto.', c: 'Guía el agua de la abertura de arriba a la de abajo.' },
+        lake2: { t: 'Enigma en el agua', s: 'Nadas por el pasadizo subterráneo. En una roca sobre el agua hay un enigma.', c: 'Cuantos más das, más dejas atrás. ¿Qué son?' },
+        treasure: { t: 'El cofre', s: 'En la segunda cueva hay un cofre con candado de letras. Usa las letras de tu pasaporte.', c: 'Sin esto no verías nada aquí abajo.' }
+      }
+    }
+  }
+});
+
+const HARD_UI = {
+  nl: { walked: 'gelopen', next: 'Volgende', from: 'vanaf', dirs: ['N', 'NO', 'O', 'ZO', 'Z', 'ZW', 'W', 'NW'], clue: (d, b, n, f) => `${d} m richting ${b}° (${n}) ${f}`, fromStart: 'vanaf het begin', fromBox: n => `vanaf kistje “${n}”`, hard: 'kompasroute', noMap: 'Kompasroute · geen punten op de kaart', lineUpT: 'E · Klim aan de ketting', lineRope: 'E · Klim aan het touw', lineDownT: 'E · Afdalen', lineBtn: 'KLIM', lineCtl: 'W/↑ omhoog · S/↓ omlaag', lineCtlT: 'Joystick ↑ omhoog · ↓ omlaag', needHelmet: 'Zonder helm en zaklamp ga je niet de grot in.' },
+  en: { walked: 'walked', next: 'Next', from: 'from', dirs: ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'], clue: (d, b, n, f) => `${d} m at ${b}° (${n}) ${f}`, fromStart: 'from the start', fromBox: n => `from box “${n}”`, hard: 'compass route', noMap: 'Compass route · no points on the map', lineUpT: 'E · Climb the chain', lineRope: 'E · Climb the rope', lineDownT: 'E · Climb down', lineBtn: 'CLIMB', lineCtl: 'W/↑ up · S/↓ down', lineCtlT: 'Joystick ↑ up · ↓ down', needHelmet: 'You don’t go into the cave without a helmet and torch.' },
+  es: { walked: 'recorrido', next: 'Siguiente', from: 'desde', dirs: ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'], clue: (d, b, n, f) => `${d} m rumbo ${b}° (${n}) ${f}`, fromStart: 'desde la salida', fromBox: n => `desde la caja «${n}»`, hard: 'ruta de brújula', noMap: 'Ruta de brújula · sin puntos en el mapa', lineUpT: 'E · Subir por la cadena', lineRope: 'E · Subir por la cuerda', lineDownT: 'E · Bajar', lineBtn: 'SUBIR', lineCtl: 'W/↑ subir · S/↓ bajar', lineCtlT: 'Joystick ↑ subir · ↓ bajar', needHelmet: 'Sin casco ni linterna no entras en la cueva.' }
+};
+const bearingOf = (dx, dz) => Math.round(((Math.atan2(dx, -dz) * 180 / Math.PI) + 360) % 360);
+const dirName = b => HARD_UI[lang].dirs[Math.round(b / 45) % 8];
+function clueFor(i) {
+  const st = STAMP_POS(), p = st[i], prev = i > 0 ? st[i - 1] : { x: LV.spawn.x ?? trailX(LV.spawn.z, LV.spawn.side), z: LV.spawn.z };
+  const H = HARD_UI[lang], d = Math.max(5, Math.round(Math.hypot(p.x - prev.x, p.z - prev.z) / 5) * 5), b = bearingOf(p.x - prev.x, p.z - prev.z);
+  const from = i > 0 ? H.fromBox(stampName(st[i - 1].id)) : H.fromStart;
+  return H.clue(d, b, dirName(b), from);
+}
+
+/* ----------------------------------------------------- level scenery for routes 3 & 4 */
+function buildLevelProps2(g) {
+  const metal = [.32, .32, .34], rope = [.92, .42, .18];
+  for (const L of (LV.lines || [])) {
+    const P = L.pts;
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i], b = P[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), n = Math.ceil(len / (L.kind === 'chain' ? .09 : .2));
+      const ry = Math.atan2(b[0] - a[0], b[2] - a[2]);
+      for (let k = 0; k < n; k++) { const t = (k + .5) / n, x = mix(a[0], b[0], t), y = mix(a[1], b[1], t), z = mix(a[2], b[2], t);
+        if (L.kind === 'chain') g.box(x, y, z, k % 2 ? .018 : .05, k % 2 ? .05 : .018, .09, metal, ry);
+        else g.box(x, y, z, .035, .035, .22, rope, ry); }
+    }
+    for (const e of [P[0], P[P.length - 1]]) { g.box(e[0], e[1], e[2], .12, .12, .12, [.5, .5, .52]); }
+  }
+  if (LV.id === 'chains') {
+    { const z = 150, x = trailX(z) + 2.2, y = height(x, z); g.box(x, y + 1, z, .15, 2, .15, C.trunk); g.box(x, y + 1.6, z, .1, 1, 1.6, [0.12, 0.30, 0.23]); COLLIDERS.push({ x, z, r: .5 }); }
+    // the Lion Rock: a tall rock with a slab jutting out over the canyon
+    { const L = LV.lionRock, y = L.y, st = [.84, .7, .55];
+      g.rock(L.x - 2, y + 2, L.z, 4, st); g.rock(L.x - 1, y + 5.5, L.z + .5, 3, st.map(v => v * .94));
+      g.box(L.x + 2.2, y + 7.6, L.z + .2, 7, 1.1, 3.2, st.map(v => v * .9), .05); g.rock(L.x + 5.5, y + 7.9, L.z, 1, st);
+      COLLIDERS.push({ x: L.x - 2, z: L.z, r: 3.8 }, { x: L.x - .8, z: L.z + .5, r: 2.6 }); }
+    // boulders and rubble along the foot of the three rock bands (not where the chains are)
+    { const M = LV.mtn; seed = 61;
+      for (let k = 0; k < 3; k++) { const n = Math.round(2 * Math.PI * [36, 24, 13][k] / 3.6);
+        for (let i = 0; i < n; i++) { const th = i / n * Math.PI * 2 + rnd() * .05, rb = mtnRadius(k, th);
+          if (Math.abs(Math.atan2(Math.sin(th - LV.chainTh[k]), Math.cos(th - LV.chainTh[k]))) * rb < 3.2) continue;
+          const r = rb + .4 + rnd() * .6, x = M.x + Math.cos(th) * r, z = M.z + Math.sin(th) * r, s = .7 + rnd() * .8, y = height(x, z);
+          g.rock(x, y - .5, z, s, C.rock.map(v => v * (.85 + rnd() * .2))); COLLIDERS.push({ x, z, r: s * .7 }); } } }
+    // scramble boulders on the slope
+    seed = 41; for (let i = 0; i < 16; i++) { const z = LV.scramble.z - 16 + rnd() * 32, x = LV.scramble.x - 14 + rnd() * 28; if (Math.hypot(x - LV.scramble.x, z - LV.scramble.z) < 3.5) continue;
+      const s = .8 + rnd() * 1.3, y = height(x, z); g.rock(x, y - .25, z, s, C.pale); COLLIDERS.push({ x, z, r: s * .82, top: y - .25 + s * .92 }); }
+    // summit: cairn with a metal box for the book, a bench facing the sea
+    { const [x, z] = LV.summitP, y = height(x, z); g.rock(x - .9, y - .2, z - .6, .8, C.pale); g.box(x, y + .45, z, .55, .5, .4, [.62, .14, .1]); g.box(x, y + .1, z, .9, .2, .7, C.pale); COLLIDERS.push({ x, z, r: .7 });
+      const [vx, vz] = LV.viewP, vy = height(vx, vz); g.box(vx + 1.2, vy + .45, vz, .4, .08, 1.8, C.wood); for (const s of [-1, 1]) g.box(vx + 1.2, vy + .22, vz + s * .7, .08, .44, .08, C.trunk); }
+  }
+  if (LV.id === 'caves') {
+    { const z = 50, x = trailX(z) + 2.2, y = height(x, z); g.box(x, y + 1, z, .15, 2, .15, C.trunk); g.box(x, y + 1.6, z, .1, 1, 1.6, [0.12, 0.30, 0.23]); COLLIDERS.push({ x, z, r: .5 }); }
+    for (const [z, side, off, buck] of LV.deerPos) { const x = cx(z) + side * (riverW(z) + 3.5 + off); deer(g, x, z, side > 0 ? -2.2 + off : 1.1 + off, buck); }
+    // forest: dense pines on the east bank, with a clearing
+    seed = 53;
+    for (let i = 0; i < 140; i++) { const z = 150 + rnd() * 110, x = cx(z) + riverW(z) + 7 + rnd() * Math.max(4, wallStart(z) - riverW(z) - 9);
+      const st = STAMP_POS().find(p => p.id === 'forest'); if (Math.hypot(x - st.x, z - st.z) < 5 || Math.abs(x - trailX(z)) < 1.6) continue;
+      const s = .8 + rnd() * .7, y = height(x, z);
+      g.box(x, y + 1.2 * s, z, .3 * s, 2.4 * s, .3 * s, C.trunk); g.cone(x, y + 1.6 * s, z, 1.5 * s, 3.2 * s, 7, C.pine, C.pine2); g.cone(x, y + 3.2 * s, z, 1.1 * s, 2.6 * s, 7, C.pine2, C.pine);
+      COLLIDERS.push({ x, z, r: .22 + .2 * s }); }
+    // ledge with the cave hole
+    { const L = LV.ledge, H = LV.hole, rk = [.62, .5, .4];
+      g.box(L.x, L.y - .3, L.z, 2.6, .6, 2.8, rk); g.rock(L.x - .6, L.y - 1.6, L.z, 1.5, rk.map(v => v * .9));
+      COLLIDERS.push({ x: L.x, z: L.z, r: 1.35, top: L.y });
+      const hx = H.x + .02, c0 = [hx, H.y + 1, H.z];
+      for (let j = 0; j < 14; j++) { const a0 = j / 14 * Math.PI * 2, a1 = (j + 1) / 14 * Math.PI * 2;
+        g.ftri(c0, [hx, H.y + 1 + Math.sin(a1) * .95, H.z + Math.cos(a1) * .7], [hx, H.y + 1 + Math.sin(a0) * .95, H.z + Math.cos(a0) * .7], [.04, .03, .03]); }
+      for (let j = 0; j < 7; j++) { const a = j / 7 * Math.PI * 2; g.rock(hx - .1, H.y + 1 + Math.sin(a) * 1.15 - .3, H.z + Math.cos(a) * .95, .35, rk); }
+      // helmets on a hook at the foot of the ropes
+      const fx = LV.ropeFoot[0] + 1.2, fz = LV.ropeFoot[1] - 1.6, fy = height(fx, fz); g.box(fx, fy + .7, fz, .1, 1.4, .1, C.trunk);
+      g.box(fx, fy + 1.3, fz + .2, .3, .18, .34, [.95, .78, .1]); g.box(fx, fy + 1.0, fz + .2, .3, .18, .34, [.92, .35, .15]); }
+    // second exit of the cave, on the river bank
+    { const e = LV.exit2, y = height(e.x, e.z), rk = [.55, .45, .37]; g.rock(e.x + 2.5, y + .4, e.z, 1.8, rk); g.rock(e.x + 2, y + 1.5, e.z - 1.6, 1.2, rk); g.rock(e.x + 2, y + 1.5, e.z + 1.6, 1.2, rk);
+      COLLIDERS.push({ x: e.x + 2.5, z: e.z, r: 1.6 }); }
+  }
+}
+function buildLevelWater2(g) {
+  if (LV.id === 'chains') {   // the sea, far to the east
+    const y = LV._seaY ?? -10, x0 = cx(410) + 150, a = g.vert(x0, y, -900, 0, 1, 0, 0, 0, 0), b = g.vert(x0 + 1500, y, -900, 0, 1, 0, 0, 0, 0),
+          c = g.vert(x0, y, 1500, 0, 1, 0, 0, 0, 0), d = g.vert(x0 + 1500, y, 1500, 0, 1, 0, 0, 0, 0);
+    g.tri(a, c, b); g.tri(b, c, d);
+  }
+  if (LV.id === 'caves') {    // flooded passage
+    const P = LV.cavePts, y = LV.caveW;
+    for (let i = 8; i <= 10; i++) { const a = P[i], b = P[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), nx = -(b[1] - a[1]) / L, nz = (b[0] - a[0]) / L, w = 3.4;
+      const v = [[a, -1], [a, 1], [b, -1], [b, 1]].map(([p, s]) => g.vert(p[0] + nx * s * w, y, p[1] + nz * s * w, 0, 1, 0, 0, 0, 0));
+      g.tri(v[0], v[2], v[1]); g.tri(v[1], v[2], v[3]); }
+  }
+}
+// sea cliffs: close the east side of the plateau so the coast doesn't float
+function buildSeaCliff(g) {
+  if (LV.id !== 'chains') return;
+  const y0 = LV._seaY - 2, rk = [.7, .58, .47];
+  for (let z = Z0; z < Z1; z += 4) { const x = cx(z) + XW - .2, x2 = cx(z + 4) + XW - .2, h1 = height(x, z), h2 = height(x2, z + 4);
+    g.ftri([x, h1, z], [x2, h2, z + 4], [x, y0, z], rk); g.ftri([x2, h2, z + 4], [x2, y0, z + 4], [x, y0, z], rk.map(v => v * .9)); }
+}
+
+// route 2 now leads on to route 3
+LEVELS.waterfall.next = 'chains';
+for (const id of ['chains', 'caves']) for (const l of ['nl', 'en', 'es']) LVTXT[id][l].mFine = LVTXT[id][l].fine;
+Object.assign(LVTXT.waterfall.nl, { finalBtn: 'Begin Route 3 · The Chains', finalSoon: '' });
+Object.assign(LVTXT.waterfall.en, { finalBtn: 'Start Route 3 · The Chains', finalSoon: '' });
+Object.assign(LVTXT.waterfall.es, { finalBtn: 'Empezar Ruta 3 · The Chains', finalSoon: '' });
+
+/* ============================================================ ROUTES 5–8
+   Every route plays differently:
+   5 The Power of Water  – classic: map with points and an arrow
+   6 Nature is Here      – photo hunt: you only get a photo of the next spot, plus warm/cold
+   7 Cala to Cala        – race against the tide: the sea rises while you play, SUP board
+   8 Next Level Sightseeing – compass route (bearing + distance) */
+let TIDE = { h: 0 }, PHOTO_CAM = null, PHOTOS = {};
+const MODE_ICON = { classic: '🗺️', compass: '🧭', photo: '📷', tide: '🌊' };
+function cylG(g, x, y, z, r0, r1, h, seg, col) {
+  for (let i = 0; i < seg; i++) { const a0 = i / seg * Math.PI * 2, a1 = (i + 1) / seg * Math.PI * 2;
+    const p = (a, r, yy) => [x + Math.cos(a) * r, yy, z + Math.sin(a) * r], c = i % 2 ? col : col.map(v => v * .92);
+    g.ftri(p(a0, r0, y), p(a0, r1, y + h), p(a1, r0, y), c); g.ftri(p(a1, r0, y), p(a0, r1, y + h), p(a1, r1, y + h), c); }
+}
+function houseG(g, x, z, w, d, h, ry, wall, roof) {
+  const y = height(x, z) - .2; g.box(x, y + h / 2, z, w, h, d, wall, ry);
+  g.cone(x, y + h, z, Math.max(w, d) * .78, h * .45, 4, roof, roof.map(v => v * .88));
+  g.box(x + Math.sin(ry) * d * .5, y + .9, z + Math.cos(ry) * d * .5, .9, 1.8, .08, [.35, .22, .14], ry);
+  COLLIDERS.push({ x, z, r: Math.max(w, d) * .62 });
+}
+const WHITE = [.94, .92, .87], TERRA = [.72, .36, .24];
+
+/* ------------------------------------------------------------ coast (route 7) */
+const COVES = [70, 220, 380, 530];
+function coveInset(z) { let s = 0; for (const c of COVES) s += 28 * (1 - smooth(0, 1, Math.abs(z - c) / 42)); return Math.min(28, s); }
+function coastX(z) { return cx(z) + 20 - coveInset(z); }
+function coastH(x, z) {
+  const xc = coastX(z), e = x - xc, w = clamp(coveInset(z) / 28, 0, 1);
+  let h;
+  if (e <= 0) {
+    const u = -e, cliff = 9 * smooth(0, 3.5, u) + .12 * u, beach = .07 * u + 7 * smooth(22, 55, u);
+    h = mix(cliff, beach, w) + (4 + 6 * fbm(x * .02, z * .02)) * smooth(40, 90, u) + .6 * (fbm(x * .2, z * .2) - .5) * (1 - w * .8) * smooth(0, 3, u);
+  } else {
+    const shelf = e < 7 ? -.45 : -.45 - 4.5 * smooth(7, 13, e), bch = -(.065 * e + .0016 * e * e);
+    h = Math.max(-9, mix(shelf, bch, w)) + .25 * (fbm(x * .3, z * .3) - .5);
+  }
+  return LV.seaY + h;
+}
+function coastColor(x, y, z, n, col) {
+  const s = LV.seaY, steep = 1 - smooth(.55, .82, n[1]), w = clamp(coveInset(z) / 28, 0, 1);
+  if (y < s - .3) return [.78, .7, .52].map(v => v * (.75 + .25 * smooth(s - 6, s - .3, y)));
+  const sand = [.93, .85, .66];
+  if (y < s + 2.6 && w > .25) col = sand;
+  else if (y < s + .6) col = [.62, .55, .45];
+  return col.map((v, k) => mix(v, C.rock[k], steep));
+}
+
+/* ------------------------------------------------------------ level data */
+Object.assign(LEVELS, {
+  power: {
+    id: 'power', num: 5, next: 'nature', mode: 'classic', seed: 19, Z1: 620, cxA: 14, cxP: 1.6, rw: 5.5,
+    lake: { z1: 96, w: 36 },
+    falls: [{ z: 98, drop: 14, wide: 0 }, { z: 330, drop: 6, wide: 6 }, { z: 482, drop: 5, wide: 5 }],
+    depth: z => 2.4 - 1.4 * smooth(352, 364, z) * (1 - smooth(438, 450, z)),
+    ramp: { z0: 150, z1: 272, side: -1 },
+    spawn: { z: 116, side: -1, face: 2.1, camYaw: 2.1 + Math.PI },
+    jumpZone: [FAR, FAR], showerZ: null,
+    rock: [[0.80, 0.62, 0.46], [0.68, 0.52, 0.40], [0.90, 0.82, 0.70]],
+    feat: { slide: { z0: 471, z1: 498, off: 3.2 } },
+    letters: { start: 'E', dam: 'M', village: 'B', river: 'A', fall: 'L', wade: 'S', slide: 'E' },
+    icon: { start: '🔭', dam: '🧱', village: '🏘️', river: '🏞️', fall: '💦', wade: '🦶', slide: '🛝', picnic: '🧺' },
+    pz: { start: { kind: 'code', answer: '538' }, dam: { kind: 'text', answers: ['meer', 'stuwmeer', 'reservoir', 'lake', 'embalse', 'pantano', 'lago'] },
+          village: { kind: 'text', cipher: true, answers: ['stuwdam', 'dam', 'presa'] }, river: { kind: 'simon', len: 5 }, fall: { kind: 'pipes' },
+          wade: { kind: 'order' }, slide: { kind: 'choice', correct: 2 }, picnic: { kind: 'text', final: true, answers: ['embalse'] } },
+    setup() {
+      const zm = 112; MIRADOR = { z: zm, x: cx(zm) - (wallStart(zm) + 13) }; MIRADOR.y = height(MIRADOR.x, zm);
+      this.spawn.x = MIRADOR.x - 7; this.spawn.zz = zm + 4;
+      this.damP = { z: 90 }; this.damP.x = cx(90) - (wallStart(90) + 10);
+      this.vil = { z: 146, x: cx(146) - (wallStart(146) + 30) };
+      this.picnic = { z: 548, x: cx(548) + riverW(548) + 8 };
+    },
+    stations() {
+      return [
+        { id: 'start', x: MIRADOR.x, z: MIRADOR.z, r: 4.5 },
+        { id: 'dam', x: this.damP.x, z: this.damP.z, r: 6 },
+        { id: 'village', x: this.vil.x, z: this.vil.z, r: 7 },
+        { id: 'river', x: cx(262) - (riverW(262) + 5), z: 262, r: 6 },
+        { id: 'fall', x: cx(338), z: 338, r: 5.5, swim: true },
+        { id: 'wade', x: cx(402), z: 402, r: 6 },
+        { id: 'slide', x: SLIDE.x(SLIDE.z1), z: SLIDE.z1, manual: true },
+        { id: 'picnic', x: this.picnic.x, z: this.picnic.z, r: 6 }
+      ];
+    }
+  },
+  nature: {
+    id: 'nature', num: 6, next: 'cala', mode: 'photo', seed: 23, Z1: 620, cxA: 12, cxP: .3, rw: 5,
+    falls: [{ z: 120, drop: 16, wide: 9 }, { z: 330, drop: 2, wide: 3 }],
+    spawn: { z: 98, side: 1, face: 0, camYaw: Math.PI },
+    jumpZone: [122, 152], showerZ: null,
+    rock: [[0.76, 0.66, 0.52], [0.64, 0.55, 0.44], [0.90, 0.85, 0.74]],
+    feat: { deck: { za: 123, zb: 134, rock: true } },
+    letters: { start: 'N', path: 'A', ruins: 'T', reeds: 'U', pool: 'R', jump: 'A', village: 'L' },
+    icon: { start: '📷', path: '🥾', ruins: '🏚️', reeds: '🌾', pool: '🏊', jump: '🌊', village: '☕', picnic: '🥘' },
+    pz: { start: { kind: 'choice', correct: 1 }, path: { kind: 'text', answers: ['boom', 'tree', 'arbol'] },
+          ruins: { kind: 'text', cipher: true, answers: ['molen', 'watermolen', 'mill', 'watermill', 'molino'] }, reeds: { kind: 'simon', len: 6 },
+          pool: { kind: 'order' }, jump: { kind: 'choice', correct: 0 }, village: { kind: 'code', answer: '423' },
+          picnic: { kind: 'text', final: true, answers: ['natural'] } },
+    setup() {
+      this.ruins = { z: 158 }; this.ruins.x = cx(158) + riverW(158) + 12;
+      this.plaza = { z: 312 }; this.plaza.x = cx(312) + riverW(312) + 14;
+      this.camp = { z: 432 }; this.camp.x = cx(432) + riverW(432) + 7;
+      this.npcs = [{ at: [this.camp.x + 1.6, this.camp.z + .6, -1.2], pal: { shirt: [.85, .35, .2], shirtDark: [.7, .28, .15] } },
+                   { at: [this.plaza.x + 1.2, this.plaza.z - 2.5, 2.6], w: true, pal: { shirt: [.95, .95, .92], shirtDark: [.8, .8, .78] } }];
+    },
+    stations() {
+      return [
+        { id: 'start', x: trailX(104), z: 104, r: 5, cam: [-3, 3, -8] },
+        { id: 'path', x: trailX(127) + .5, z: 127, r: 5, cam: [4, 4, 9] },
+        { id: 'ruins', x: this.ruins.x, z: this.ruins.z, r: 5, cam: [-8, 3, -6] },
+        { id: 'reeds', x: cx(192) + riverW(192) + 2.5, z: 192, r: 5, cam: [-9, 2.5, 4] },
+        { id: 'pool', x: cx(132), z: 132, r: 5.5, swim: true, cam: [3, 3, 14] },
+        { id: 'jump', x: DECK.xb, z: DECK.zb, manual: true, cam: [-2, 2, 10] },
+        { id: 'village', x: this.plaza.x, z: this.plaza.z, r: 6, cam: [-9, 3.5, 5] },
+        { id: 'picnic', x: this.camp.x, z: this.camp.z, r: 6, cam: [-7, 3, -6] }
+      ];
+    }
+  },
+  cala: {
+    id: 'cala', num: 7, next: 'sightseeing', mode: 'tide', coast: true, seaY: 0, fogK: .5, tideMax: 1.0, tideDur: 600,
+    seed: 29, Z1: 620, cxA: 10, cxP: 0, rw: 4, falls: [],
+    spawn: { z: 62, side: -1, face: 0, camYaw: Math.PI },
+    jumpZone: [455, 492], showerZ: null,
+    rock: [[0.82, 0.70, 0.56], [0.70, 0.60, 0.48], [0.92, 0.88, 0.78]],
+    feat: {},
+    letters: { start: 'M', shelf: 'E', sup: 'D', beach3: 'U', view: 'S', jump: 'A', snorkel: 'S' },
+    icon: { start: '🏖️', shelf: '🦀', sup: '🏄', beach3: '🤿', view: '🏝️', jump: '🌊', snorkel: '🐠', cove4: '🪼' },
+    pz: { start: { kind: 'code', answer: '438' }, shelf: { kind: 'text', answers: ['getij', 'tij', 'eb', 'vloed', 'getijde', 'tide', 'marea'] },
+          sup: { kind: 'choice', correct: 1 }, beach3: { kind: 'order' }, view: { kind: 'text', answers: ['ibiza', 'eivissa'] },
+          jump: { kind: 'choice', correct: 2 }, snorkel: { kind: 'simon', len: 6 }, cove4: { kind: 'text', final: true, answers: ['medusas', 'medusa'] } },
+    heightFn: (x, z) => coastH(x, z),
+    colorFn: coastColor,
+    setup() {
+      const beach = c => ({ x: coastX(c) - 7, z: c });
+      this.b = COVES.map(beach);
+      this.spawn.x = coastX(62) - 12; this.spawn.zz = 58;
+      const jz = 472, ex = coastX(jz); this.feat.deck = { za: jz, zb: jz + .01, rock: true, xa: ex - 3.5, xb: ex + 10.5 };
+      this.viewP = { z: 452, x: coastX(452) - 24 };
+      this.reef = { z: 446, x: coastX(446) + 10 };
+      this.island = { x: cx(300) + 640, z: 300 };
+    },
+    stations() {
+      return [
+        { id: 'start', x: this.b[0].x, z: this.b[0].z, r: 6 },
+        { id: 'shelf', x: coastX(146) + 3, z: 146, r: 5 },
+        { id: 'sup', x: this.b[1].x, z: this.b[1].z, r: 6 },
+        { id: 'beach3', x: this.b[2].x, z: this.b[2].z, r: 6 },
+        { id: 'view', x: this.viewP.x, z: this.viewP.z, r: 5 },
+        { id: 'jump', x: DECK.xb, z: DECK.zb, manual: true },
+        { id: 'snorkel', x: this.reef.x, z: this.reef.z, r: 5.5, swim: true },
+        { id: 'cove4', x: this.b[3].x, z: this.b[3].z, r: 6 }
+      ];
+    }
+  },
+  sightseeing: {
+    id: 'sightseeing', num: 8, next: null, hard: true, mode: 'compass', seed: 31, Z1: 620, cxA: 15, cxP: 2.8, rw: 5.5, fogK: .6,
+    falls: [{ z: 110, drop: 6, wide: 7 }, { z: 250, drop: 18, wide: 9 }],
+    bay: { z0: 470, w: 46 },
+    ramp: { z0: 288, z1: 402, side: -1 },
+    spawn: { z: 26, side: 1, face: 0, camYaw: Math.PI },
+    jumpZone: [FAR, FAR], showerZ: null,
+    rock: [[0.80, 0.64, 0.50], [0.68, 0.54, 0.42], [0.90, 0.84, 0.72]],
+    feat: {},
+    letters: { start: 'M', fallA: 'I', lip: 'R', bigpool: 'A', tower: 'D', harbor: 'O', pier: 'R' },
+    icon: { start: '🧭', fallA: '💧', lip: '🌈', bigpool: '💦', tower: '🗼', harbor: '⚓', pier: '⛵', faro: '🗼' },
+    pz: { start: { kind: 'choice', correct: 0 }, fallA: { kind: 'text', answers: ['waterval', 'waterfall', 'cascada', 'salto'] },
+          lip: { kind: 'text', cipher: true, answers: ['regenboog', 'rainbow', 'arcoiris'] }, bigpool: { kind: 'simon', len: 6 },
+          tower: { kind: 'text', answers: ['valencia', 'valència'] }, harbor: { kind: 'code', answer: '523' }, pier: { kind: 'order' },
+          faro: { kind: 'text', final: true, answers: ['mirador'] } },
+    setup() {
+      this.mtn = { z: 345, noBands: true }; this.mtn.x = cx(345) - 100;
+      this.towerP = { x: this.mtn.x, z: this.mtn.z }; this.towerP.y = height(this.towerP.x, this.towerP.z);
+      this.quay = { z: 522 }; this.quay.x = cx(522) + riverW(522) + 4;
+      this.pier = { z: 562 }; this.pier.x0 = cx(562) + riverW(562) + 1.5; this.pier.y = waterY(562) + .55;
+      this.faroP = { z: 588 }; this.faroP.x = cx(588) - riverW(588) - 7;
+    },
+    stations() {
+      return [
+        { id: 'start', x: trailX(32), z: 32, r: 6 },
+        { id: 'fallA', x: cx(116), z: 116, r: 5.5, swim: true },
+        { id: 'lip', x: cx(244) + riverW(244) + 3, z: 244, r: 4.5 },
+        { id: 'bigpool', x: cx(258), z: 258, r: 6, swim: true },
+        { id: 'tower', x: this.towerP.x, z: this.towerP.z, r: 2.2, minY: this.towerP.y + .4 },
+        { id: 'harbor', x: this.quay.x, z: this.quay.z, r: 6 },
+        { id: 'pier', x: this.pier.x0 - 12, z: this.pier.z, r: 2.6 },
+        { id: 'faro', x: this.faroP.x, z: this.faroP.z, r: 6 }
+      ];
+    }
+  }
+});
+LEVELS.caves.next = 'power';
+
+/* ------------------------------------------------------------ texts */
+const T3 = (nl, en, es) => ({ nl, en, es });
+Object.assign(LVTXT, {
+  power: {
+    nl: {
+      name: 'The Power of Water', short: 'The Power of Water',
+      lead: 'Je begint bij een uitkijkpunt boven een groot stuwmeer met een stuwdam. Je loopt langs het dorpje waar vroeger de mensen woonden die de dam bouwden en onderhielden, en daalt dan af naar de rivier. Daar wacht een waterval, een stuk waar je door het water waadt en een natuurlijke glijbaan van rots. Dit is een klassieke route: de kistjes staan op de kaart en de pijl wijst de weg.',
+      fine: 'Geïnspireerd op de tour “The Power of Water” van Nuestra Aventura. Een virtuele, vereenvoudigde versie – geen echte kaart.',
+      stamps: [['start', 'Het uitkijkpunt', 'Kijk uit over het stuwmeer.'], ['dam', 'De stuwdam', 'Loop over de rand naar de stuwdam.'], ['village', 'Het arbeidersdorp', 'Het dorpje van de mensen die de dam onderhielden.'],
+        ['river', 'Naar de rivier', 'Daal over de helling af naar de rivier.'], ['fall', 'De waterval', 'Zwem in de poel onder de waterval.'], ['wade', 'Door het water', 'Waad door het ondiepe stuk van de rivier.'],
+        ['slide', 'De glijbaan van rots', 'Zwem naar de gladde rotsgoot naast de laatste waterval en glij naar beneden.'], ['picnic', 'Picknick', 'Rust uit bij de picknicktafel.']],
+      nbIntroT: 'The Power of Water', nbIntro: 'Vandaag: de kracht van het water. Een stuwmeer, een dam, een dorpje en een rivier met een glijbaan. Acht kistjes – deze keer staan ze gewoon op de kaart.',
+      finalT: 'Een nieuwe pagina!', finalSub: 'Route 6 · Nature is Here',
+      finalText: 'In de picknickmand zit een stapeltje foto’s: de top van een prachtige waterval, oude gebouwen met bomen erdoorheen, riet, een dorpspleintje… “Volgende keer krijg je geen kaart en geen kompas. Alleen deze foto’s.”',
+      finalBtn: 'Begin Route 6 · Nature is Here',
+      pz: {
+        start: { t: 'Het slot bij het uitkijkpunt', s: 'Aan de reling van het uitkijkpunt hangt een kistje met een cijferslot.', c: 'Code = het nummer van deze route · het aantal talen van dit spel · het aantal routes in dit spel.' },
+        dam: { t: 'Raadsel bij de stuwdam', s: 'Op een betonblok van de dam staat een raadsel geschilderd.', c: 'Ik word groter als het regent en kleiner in een droge zomer, maar ik loop nooit weg: deze muur houdt me tegen. Wat ben ik?' },
+        village: { t: 'Geheimschrift in het dorp', s: 'Op de deur van het oude schooltje staat een woord. Elke letter is één plek in het alfabet opgeschoven.', c: 'Wat de mensen uit dit dorp bouwden en onderhielden.', code: 'TUVXEBN' },
+        river: { t: 'De rivierstenen', s: 'Onderaan de helling liggen vier gekleurde stenen in de rivier. Ze lichten op in een vaste volgorde.', c: 'Onthoud de volgorde en tik de stenen daarna na.' },
+        fall: { t: 'Achter de waterval', s: 'Achter het vallende water ligt een kistje. De stenen goot ernaast is kapot.', c: 'Leid het water van de bovenste naar de onderste opening.' },
+        wade: { t: 'Veilig waden', s: 'Hier is de rivier ondiep genoeg om doorheen te lopen.', c: 'Zet de stappen in de goede volgorde.', steps: ['Waterschoenen aan', 'Kijk waar het water rustig en ondiep is', 'Gebruik een stok of houd elkaars hand vast', 'Loop schuin tegen de stroom in', 'Kleine stapjes, voeten op de bodem'] },
+        slide: { t: 'De glijbaan van rots', s: 'Wat een rit! Op een rots onderaan staat een vraag.', c: 'Hoe ga je het veiligst van een natuurlijke glijbaan?', opts: ['Met je hoofd eerst, op je buik', 'Staand, om sneller te gaan', 'Zittend, voeten eerst'] },
+        picnic: { t: 'De picknickmand', s: 'Bij de picknicktafel staat een mand met een letterslot. Gebruik de letters uit je paspoort.', c: 'Het Spaanse woord voor stuwmeer.' }
+      }
+    },
+    en: {
+      name: 'The Power of Water', short: 'The Power of Water',
+      lead: 'You start at a viewpoint above a large reservoir with a dam. You pass the little village where the people who built and looked after the dam used to live, then go down to the river. A waterfall, a stretch where you wade through the water and a natural rock slide are waiting. This is a classic route: the boxes are on the map and the arrow shows the way.',
+      fine: 'Inspired by the “The Power of Water” tour by Nuestra Aventura. A simplified virtual version – not a real map.',
+      stamps: [['start', 'The viewpoint', 'Look out over the reservoir.'], ['dam', 'The dam', 'Walk along the rim to the dam.'], ['village', 'The workers’ village', 'The village of the people who looked after the dam.'],
+        ['river', 'Down to the river', 'Walk down the slope to the river.'], ['fall', 'The waterfall', 'Swim in the pool below the waterfall.'], ['wade', 'Through the water', 'Wade through the shallow part of the river.'],
+        ['slide', 'The rock slide', 'Swim to the smooth rock chute beside the last waterfall and slide down.'], ['picnic', 'Picnic', 'Rest at the picnic table.']],
+      nbIntroT: 'The Power of Water', nbIntro: 'Today: the power of water. A reservoir, a dam, a village and a river with a slide. Eight boxes – this time they are simply on the map.',
+      finalT: 'A new page!', finalSub: 'Route 6 · Nature is Here',
+      finalText: 'The picnic basket holds a small pile of photos: the top of a beautiful waterfall, old buildings with trees growing through them, reeds, a village square… “Next time you get no map and no compass. Just these photos.”',
+      finalBtn: 'Start Route 6 · Nature is Here',
+      pz: {
+        start: { t: 'The lock at the viewpoint', s: 'A box with a number lock hangs from the railing of the viewpoint.', c: 'Code = the number of this route · the number of languages in this game · the number of routes in this game.' },
+        dam: { t: 'Riddle at the dam', s: 'A riddle is painted on a concrete block of the dam.', c: 'I grow when it rains and shrink in a dry summer, but I never run away: this wall holds me back. What am I?' },
+        village: { t: 'Secret code in the village', s: 'A word is written on the door of the old school. Every letter has moved one place in the alphabet.', c: 'What the people of this village built and looked after.', code: 'EBN' },
+        river: { t: 'The river stones', s: 'At the bottom of the slope four coloured stones lie in the river. They light up in a fixed order.', c: 'Remember the order, then tap the stones in the same order.' },
+        fall: { t: 'Behind the waterfall', s: 'A box lies behind the falling water. The stone channel next to it is broken.', c: 'Guide the water from the top opening to the bottom one.' },
+        wade: { t: 'Wading safely', s: 'Here the river is shallow enough to walk through.', c: 'Put the steps in the right order.', steps: ['Water shoes on', 'Look where the water is calm and shallow', 'Use a stick or hold each other’s hand', 'Walk at an angle against the current', 'Small steps, feet on the bottom'] },
+        slide: { t: 'The rock slide', s: 'What a ride! A rock at the bottom asks a question.', c: 'What is the safest way down a natural slide?', opts: ['Head first, on your belly', 'Standing up, to go faster', 'Sitting, feet first'] },
+        picnic: { t: 'The picnic basket', s: 'A basket with a letter lock stands by the picnic table. Use the letters in your passport.', c: 'The Spanish word for reservoir.' }
+      }
+    },
+    es: {
+      name: 'The Power of Water', short: 'The Power of Water',
+      lead: 'Empiezas en un mirador sobre un gran embalse con su presa. Pasas por el pueblecito donde vivía la gente que construyó y cuidaba la presa y bajas al río. Allí te esperan una cascada, un tramo para cruzar el agua a pie y un tobogán natural de roca. Es una ruta clásica: las cajas están en el mapa y la flecha te guía.',
+      fine: 'Inspirado en el tour “The Power of Water” de Nuestra Aventura. Versión virtual simplificada – no es un mapa real.',
+      stamps: [['start', 'El mirador', 'Contempla el embalse.'], ['dam', 'La presa', 'Ve por el borde hasta la presa.'], ['village', 'El poblado', 'El pueblo de la gente que cuidaba la presa.'],
+        ['river', 'Bajada al río', 'Baja por la ladera hasta el río.'], ['fall', 'La cascada', 'Nada en la poza bajo la cascada.'], ['wade', 'Por el agua', 'Cruza a pie la parte poco profunda del río.'],
+        ['slide', 'El tobogán de roca', 'Nada hasta el canal de roca junto a la última cascada y deslízate.'], ['picnic', 'Picnic', 'Descansa en la mesa de picnic.']],
+      nbIntroT: 'The Power of Water', nbIntro: 'Hoy: la fuerza del agua. Un embalse, una presa, un pueblo y un río con tobogán. Ocho cajas – esta vez aparecen en el mapa.',
+      finalT: '¡Una página nueva!', finalSub: 'Ruta 6 · Nature is Here',
+      finalText: 'En la cesta de picnic hay un montón de fotos: lo alto de una cascada preciosa, edificios antiguos con árboles que los atraviesan, cañas, una plaza de pueblo… «La próxima vez no tendrás mapa ni brújula. Solo estas fotos».',
+      finalBtn: 'Empezar Ruta 6 · Nature is Here',
+      pz: {
+        start: { t: 'El candado del mirador', s: 'De la barandilla del mirador cuelga una caja con candado de números.', c: 'Código = el número de esta ruta · los idiomas de este juego · las rutas de este juego.' },
+        dam: { t: 'Enigma en la presa', s: 'En un bloque de hormigón de la presa hay un enigma pintado.', c: 'Crezco cuando llueve y mengüo en verano, pero nunca me escapo: este muro me retiene. ¿Qué soy?' },
+        village: { t: 'Código en el poblado', s: 'En la puerta de la vieja escuela hay una palabra. Cada letra se ha movido un lugar en el alfabeto.', c: 'Lo que la gente de este pueblo construyó y cuidaba.', code: 'QSFTB' },
+        river: { t: 'Las piedras del río', s: 'Al pie de la ladera hay cuatro piedras de colores en el río. Se iluminan en un orden fijo.', c: 'Recuerda el orden y toca después las piedras igual.' },
+        fall: { t: 'Detrás de la cascada', s: 'Detrás del agua hay una caja. El canal de piedra de al lado está roto.', c: 'Guía el agua de la abertura de arriba a la de abajo.' },
+        wade: { t: 'Cruzar con seguridad', s: 'Aquí el río es tan poco profundo que se puede cruzar andando.', c: 'Ordena los pasos.', steps: ['Escarpines puestos', 'Mira dónde el agua está tranquila y baja', 'Usa un palo o daos la mano', 'Camina en diagonal contra la corriente', 'Pasos cortos, pies en el fondo'] },
+        slide: { t: 'El tobogán de roca', s: '¡Menudo viaje! En una roca de abajo hay una pregunta.', c: '¿Cuál es la forma más segura de bajar por un tobogán natural?', opts: ['De cabeza, boca abajo', 'De pie, para ir más rápido', 'Sentado, con los pies por delante'] },
+        picnic: { t: 'La cesta de picnic', s: 'Junto a la mesa hay una cesta con candado de letras. Usa las letras de tu pasaporte.', c: 'Lo que hay detrás de la presa.' }
+      }
+    }
+  },
+  nature: {
+    nl: {
+      name: 'Nature is Here', short: 'Nature is Here',
+      lead: 'Je begint boven op de mooiste waterval van de route. Een smal pad gaat naar beneden, langs oude gebouwen waar bomen doorheen groeien en langs het riet, naar de poel waar je kunt zwemmen en van de rots kunt springen. Daarna drink je iets in het dorp en zwem je nog een keer terwijl de gids kookt. Dit is een fotospeurtocht: geen kaart en geen pijl. Je krijgt alleen een foto van de volgende plek. Hoe dichterbij je komt, hoe warmer.',
+      fine: 'Geïnspireerd op de tour “Nature is Here” van Nuestra Aventura. Een virtuele, vereenvoudigde versie – geen echte kaart.',
+      stamps: [['start', 'Boven op de waterval', 'Kijk over de rand van de waterval.'], ['path', 'Het smalle pad', 'Het pad langs de waterval naar beneden.'], ['ruins', 'De oude molen', 'Oude gebouwen met bomen erdoorheen.'],
+        ['reeds', 'Het riet', 'Waar het riet langs het water groeit.'], ['pool', 'De poel', 'Zwem in de poel onder de waterval.'], ['jump', 'De sprong', 'Spring van de rotsrichel in de poel.'],
+        ['village', 'Het dorpsplein', 'Iets drinken op het terras.'], ['picnic', 'De gids kookt', 'Bij het vuur, waar de gids kookt.']],
+      nbIntroT: 'Nature is Here', nbIntro: 'Geen kaart, geen kompas. Alleen foto’s. Kijk goed om je heen: waar is deze foto genomen? Bovenin zie je of je warmer of kouder wordt.',
+      finalT: 'Een nieuwe pagina!', finalSub: 'Route 7 · Cala to Cala',
+      finalText: 'Terwijl de paella pruttelt, vertelt de gids over de kust: baaitjes, rotsen waar je van springt, een SUP-board en snorkelen. “Maar let op het getij! Hoe langer je erover doet, hoe hoger het water.”',
+      finalBtn: 'Begin Route 7 · Cala to Cala',
+      pz: {
+        start: { t: 'Hoe werkt een fotospeurtocht?', s: 'Boven op de waterval ligt een kistje met een briefje: “Vandaag geen kaart. Bij elk kistje krijg je een foto van de volgende plek.”', c: 'Hoe vind je de volgende plek het best?', opts: ['Zo snel mogelijk in een rechte lijn rennen', 'Rondkijken en de foto vergelijken met wat je ziet', 'Wachten tot iemand je komt halen'] },
+        path: { t: 'Raadsel op het pad', s: 'Halverwege het smalle pad staat een raadsel in een boomstam gekerfd.', c: 'Ik heb een kroon maar ben geen koning. Ik heb ringen maar geen vingers. Wat ben ik?' },
+        ruins: { t: 'Geheimschrift in de ruïne', s: 'Op een oude steen staat een woord. Elke letter is één plek in het alfabet opgeschoven.', c: 'Wat dit gebouw vroeger was: het water liet hier het graan malen.', code: 'NPMFO' },
+        reeds: { t: 'Het ritselende riet', s: 'Vier rietstengels bewegen in een vaste volgorde – zes keer.', c: 'Onthoud de volgorde en tik ze daarna na.' },
+        pool: { t: 'Zwemmen in de poel', s: 'Onder de waterval is het water diep en helder.', c: 'Zet de stappen in de goede volgorde.', steps: ['Eerst kijken hoe diep het is', 'Rustig het water in', 'Niet te dicht onder de vallende straal', 'Samen zwemmen, niet alleen', 'Afdrogen en warm aankleden'] },
+        jump: { t: 'De sprong', s: 'Plons! Op een rots bij de poel staat een vraag.', c: 'Wat check je vóór je van een rots springt?', opts: ['Of het water diep genoeg is en er niemand onder je zwemt', 'Of je vrienden je filmen', 'Of het al donker wordt'] },
+        village: { t: 'Het slot op het terras', s: 'Op het dorpsplein staat een kistje naast de tafels.', c: 'Code = het aantal tafeltjes op het terras · het aantal parasols · het aantal talen van dit spel.' },
+        picnic: { t: 'De pan van de gids', s: 'De gids roert in de pan. Het deksel van de kookkist zit op slot. Gebruik de letters uit je paspoort.', c: 'In het Spaans: zo is alles hier – niets is nep.' }
+      }
+    },
+    en: {
+      name: 'Nature is Here', short: 'Nature is Here',
+      lead: 'You start at the top of the most beautiful waterfall on the route. A narrow path leads down, past old buildings with trees growing through them and past the reeds, to the pool where you can swim and jump from the rock. Then you have a drink in the village and swim once more while the guide cooks. This is a photo hunt: no map and no arrow. You only get a photo of the next spot. The closer you get, the warmer it gets.',
+      fine: 'Inspired by the “Nature is Here” tour by Nuestra Aventura. A simplified virtual version – not a real map.',
+      stamps: [['start', 'Top of the waterfall', 'Look over the edge of the waterfall.'], ['path', 'The narrow path', 'The path down beside the waterfall.'], ['ruins', 'The old mill', 'Old buildings with trees growing through them.'],
+        ['reeds', 'The reeds', 'Where the reeds grow by the water.'], ['pool', 'The pool', 'Swim in the pool below the waterfall.'], ['jump', 'The jump', 'Jump from the rock ledge into the pool.'],
+        ['village', 'The village square', 'A drink on the terrace.'], ['picnic', 'The guide cooks', 'By the fire, where the guide is cooking.']],
+      nbIntroT: 'Nature is Here', nbIntro: 'No map, no compass. Only photos. Look around carefully: where was this photo taken? At the top you can see whether you are getting warmer or colder.',
+      finalT: 'A new page!', finalSub: 'Route 7 · Cala to Cala',
+      finalText: 'While the paella simmers, the guide tells you about the coast: little coves, rocks to jump from, a SUP board and snorkelling. “But watch the tide! The longer you take, the higher the water.”',
+      finalBtn: 'Start Route 7 · Cala to Cala',
+      pz: {
+        start: { t: 'How does a photo hunt work?', s: 'At the top of the waterfall lies a box with a note: “No map today. At every box you get a photo of the next spot.”', c: 'What is the best way to find the next spot?', opts: ['Run in a straight line as fast as you can', 'Look around and compare the photo with what you see', 'Wait until someone comes to fetch you'] },
+        path: { t: 'Riddle on the path', s: 'Halfway down the narrow path a riddle is carved into a tree trunk.', c: 'I have a crown but I am no king. I have rings but no fingers. What am I?' },
+        ruins: { t: 'Secret code in the ruin', s: 'A word is written on an old stone. Every letter has moved one place in the alphabet.', c: 'What this building used to be: the water turned the stones that ground the grain.', code: 'NJMM' },
+        reeds: { t: 'The rustling reeds', s: 'Four reed stems move in a fixed order – six times.', c: 'Remember the order, then tap them in the same order.' },
+        pool: { t: 'Swimming in the pool', s: 'Below the waterfall the water is deep and clear.', c: 'Put the steps in the right order.', steps: ['First check how deep it is', 'Get into the water calmly', 'Not too close under the falling water', 'Swim together, not alone', 'Dry off and get warm clothes on'] },
+        jump: { t: 'The jump', s: 'Splash! A rock by the pool asks a question.', c: 'What do you check before you jump from a rock?', opts: ['Whether the water is deep enough and nobody is swimming below you', 'Whether your friends are filming', 'Whether it is getting dark'] },
+        village: { t: 'The lock on the terrace', s: 'A box stands next to the tables on the village square.', c: 'Code = the number of tables on the terrace · the number of parasols · the number of languages in this game.' },
+        picnic: { t: 'The guide’s pan', s: 'The guide is stirring the pan. The lid of the cooking chest is locked. Use the letters in your passport.', c: 'In Spanish: what everything here is – nothing is fake.' }
+      }
+    },
+    es: {
+      name: 'Nature is Here', short: 'Nature is Here',
+      lead: 'Empiezas en lo alto de la cascada más bonita de la ruta. Un sendero estrecho baja junto a edificios antiguos con árboles que los atraviesan y junto a las cañas hasta la poza, donde puedes nadar y saltar desde la roca. Después tomas algo en el pueblo y vuelves a nadar mientras el guía cocina. Es una búsqueda fotográfica: sin mapa ni flecha. Solo tienes una foto del siguiente lugar. Cuanto más te acercas, más caliente.',
+      fine: 'Inspirado en el tour “Nature is Here” de Nuestra Aventura. Versión virtual simplificada – no es un mapa real.',
+      stamps: [['start', 'Lo alto de la cascada', 'Asómate al borde de la cascada.'], ['path', 'El sendero estrecho', 'El sendero que baja junto a la cascada.'], ['ruins', 'El viejo molino', 'Edificios antiguos con árboles dentro.'],
+        ['reeds', 'Las cañas', 'Donde crecen las cañas junto al agua.'], ['pool', 'La poza', 'Nada en la poza bajo la cascada.'], ['jump', 'El salto', 'Salta desde la cornisa de roca a la poza.'],
+        ['village', 'La plaza del pueblo', 'Algo de beber en la terraza.'], ['picnic', 'El guía cocina', 'Junto al fuego, donde cocina el guía.']],
+      nbIntroT: 'Nature is Here', nbIntro: 'Sin mapa ni brújula. Solo fotos. Mira bien a tu alrededor: ¿dónde se hizo esta foto? Arriba verás si te acercas (caliente) o te alejas (frío).',
+      finalT: '¡Una página nueva!', finalSub: 'Ruta 7 · Cala to Cala',
+      finalText: 'Mientras la paella se hace, el guía te habla de la costa: calas, rocas para saltar, una tabla de SUP y snorkel. «¡Pero ojo con la marea! Cuanto más tardes, más sube el agua».',
+      finalBtn: 'Empezar Ruta 7 · Cala to Cala',
+      pz: {
+        start: { t: '¿Cómo funciona la búsqueda fotográfica?', s: 'En lo alto de la cascada hay una caja con una nota: «Hoy no hay mapa. En cada caja recibirás una foto del siguiente lugar».', c: '¿Cuál es la mejor forma de encontrar el siguiente lugar?', opts: ['Correr en línea recta lo más rápido posible', 'Mirar alrededor y comparar la foto con lo que ves', 'Esperar a que alguien venga a buscarte'] },
+        path: { t: 'Enigma en el sendero', s: 'A mitad del sendero hay un enigma tallado en un tronco.', c: 'Tengo copa pero no soy vaso. Tengo anillos pero no dedos. ¿Qué soy?' },
+        ruins: { t: 'Código en la ruina', s: 'En una piedra antigua hay una palabra. Cada letra se ha movido un lugar en el alfabeto.', c: 'Lo que era este edificio: el agua movía las piedras que molían el grano.', code: 'NPMJOP' },
+        reeds: { t: 'Las cañas que susurran', s: 'Cuatro cañas se mueven en un orden fijo – seis veces.', c: 'Recuerda el orden y tócalas después igual.' },
+        pool: { t: 'Nadar en la poza', s: 'Bajo la cascada el agua es profunda y clara.', c: 'Ordena los pasos.', steps: ['Primero mirar la profundidad', 'Entrar al agua con calma', 'No ponerse justo bajo el chorro', 'Nadar acompañado, nunca solo', 'Secarse y abrigarse'] },
+        jump: { t: 'El salto', s: '¡Chof! En una roca junto a la poza hay una pregunta.', c: '¿Qué compruebas antes de saltar desde una roca?', opts: ['Que el agua sea profunda y no haya nadie debajo', 'Que tus amigos te estén grabando', 'Que esté oscureciendo'] },
+        village: { t: 'El candado de la terraza', s: 'En la plaza del pueblo hay una caja junto a las mesas.', c: 'Código = las mesas de la terraza · las sombrillas · los idiomas de este juego.' },
+        picnic: { t: 'La sartén del guía', s: 'El guía remueve la paella. La tapa del arcón de cocina tiene candado. Usa las letras de tu pasaporte.', c: 'Así es todo aquí: nada es falso.' }
+      }
+    }
+  },
+  cala: {
+    nl: {
+      name: 'Cala to Cala', short: 'Cala to Cala',
+      lead: 'Van baaitje naar baaitje langs de kust: door ondiepe zee rond de rotsen, met een SUP-board over een baai, van een rots in zee springen, snorkelen bij een rif en vanaf de kaap Ibiza zien liggen. Dit is een race tegen het getij: zodra je begint stijgt het water. Bij laag water loop je over de rotsplaten, bij hoog water moet je zwemmen. Hoe sneller je bent, hoe mooier je medaille.',
+      fine: 'Geïnspireerd op de tour “Cala to Cala” van Nuestra Aventura. Een virtuele, vereenvoudigde versie – geen echte kaart.',
+      stamps: [['start', 'Het eerste baaitje', 'Het strandje waar je begint.'], ['shelf', 'De rotsplaat', 'Loop door de ondiepe zee om de eerste kaap heen.'], ['sup', 'Het SUP-board', 'Pak het board op het strand van het tweede baaitje.'],
+        ['beach3', 'Het derde baaitje', 'Peddel naar het derde baaitje en laat het board achter.'], ['view', 'Uitzicht op Ibiza', 'Klim naar de hoogste plek van de kaap.'], ['jump', 'De rotssprong', 'Spring van de rotsrichel in zee.'],
+        ['snorkel', 'Het rif', 'Snorkel bij het rif voor de kaap.'], ['cove4', 'Het laatste baaitje', 'Zwem naar het laatste strandje.']],
+      nbIntroT: 'Cala to Cala', nbIntro: 'De klok loopt en het getij komt op. Laag water: lopen over de rotsplaten. Hoog water: zwemmen. Goud onder de 9 minuten, zilver onder de 14!',
+      finalT: 'Een nieuwe pagina!', finalSub: 'Route 8 · Next Level Sightseeing',
+      finalText: 'Op het strand ligt een ansichtkaart: twee watervallen (één van wel 30 meter), een havendorp met een vuurtoren, en het hoogste uitkijkpunt bij Valencia. “De laatste route. Neem je kompas mee!”',
+      finalBtn: 'Begin Route 8 · Next Level Sightseeing',
+      pz: {
+        start: { t: 'Het slot op het strand', s: 'Onder een parasol op het eerste strandje staat een kistje met een cijferslot. De klok loopt al!', c: 'Code = het aantal baaitjes op deze route · het aantal talen van dit spel · het aantal routes in dit spel.' },
+        shelf: { t: 'Raadsel op de rotsplaat', s: 'Op de rotsplaat om de kaap staat een raadsel. Het water klotst om je enkels.', c: 'Twee keer per dag kom ik, twee keer per dag ga ik. Ik neem het strand mee en breng het terug. Wat ben ik?' },
+        sup: { t: 'Veilig op het SUP-board', s: 'Op het strand liggen SUP-boards met peddels.', c: 'Wat doe je als je van je board valt?', opts: ['Het board laten gaan en naar de kant zwemmen', 'Het board vasthouden: de lijn zit om je enkel', 'Onder water blijven tot het board weg is'] },
+        beach3: { t: 'Klaar om te snorkelen', s: 'Je legt het board op het strand. Verderop ligt een rif.', c: 'Zet de stappen in de goede volgorde.', steps: ['Masker passen: past het goed?', 'Snorkel aan de linkerkant vastmaken', 'Rustig het water in en ontspannen ademen', 'Kijken maar niets aanraken', 'Op tijd terug naar de kant'] },
+        view: { t: 'Uitzicht vanaf de kaap', s: 'Vanaf de hoogste plek van de kaap zie je ver weg een eiland aan de horizon.', c: 'Hoe heet het eiland dat je bij helder weer vanaf deze kust kunt zien?' },
+        jump: { t: 'Van de rots in zee', s: 'Plons! Op een boei drijft een vraag.', c: 'Wat doe je vóór je in zee springt?', opts: ['Er meteen in, dan ben je het snelst', 'Alleen kijken of het water warm is', 'Checken of het diep genoeg is en er niemand onder je zwemt'] },
+        snorkel: { t: 'De vissen van het rif', s: 'Door je masker zie je vier soorten vissen langs het rif zwemmen, steeds in dezelfde volgorde.', c: 'Onthoud de volgorde en tik ze daarna na.' },
+        cove4: { t: 'De schatkist op het strand', s: 'Op het laatste strandje ligt een kist met een letterslot. Gebruik de letters uit je paspoort.', c: 'In het Spaans: de dieren waar je in de zee voor moet oppassen (meervoud).' }
+      }
+    },
+    en: {
+      name: 'Cala to Cala', short: 'Cala to Cala',
+      lead: 'From cove to cove along the coast: through shallow sea round the rocks, across a bay on a SUP board, jumping from a rock into the sea, snorkelling at a reef and seeing Ibiza from the headland. This is a race against the tide: as soon as you start, the water rises. At low tide you walk over the rock shelves, at high tide you have to swim. The faster you are, the better your medal.',
+      fine: 'Inspired by the “Cala to Cala” tour by Nuestra Aventura. A simplified virtual version – not a real map.',
+      stamps: [['start', 'The first cove', 'The little beach where you start.'], ['shelf', 'The rock shelf', 'Walk through the shallow sea round the first headland.'], ['sup', 'The SUP board', 'Take the board on the beach of the second cove.'],
+        ['beach3', 'The third cove', 'Paddle to the third cove and leave the board there.'], ['view', 'View of Ibiza', 'Climb to the highest point of the headland.'], ['jump', 'The rock jump', 'Jump from the rock ledge into the sea.'],
+        ['snorkel', 'The reef', 'Snorkel at the reef off the headland.'], ['cove4', 'The last cove', 'Swim to the last little beach.']],
+      nbIntroT: 'Cala to Cala', nbIntro: 'The clock is running and the tide is coming in. Low tide: walk over the rock shelves. High tide: swim. Gold under 9 minutes, silver under 14!',
+      finalT: 'A new page!', finalSub: 'Route 8 · Next Level Sightseeing',
+      finalText: 'A postcard lies on the beach: two waterfalls (one of them 30 metres), a harbour village with a lighthouse, and the highest viewpoint near Valencia. “The last route. Bring your compass!”',
+      finalBtn: 'Start Route 8 · Next Level Sightseeing',
+      pz: {
+        start: { t: 'The lock on the beach', s: 'Under a parasol on the first beach stands a box with a number lock. The clock is already running!', c: 'Code = the number of coves on this route · the number of languages in this game · the number of routes in this game.' },
+        shelf: { t: 'Riddle on the rock shelf', s: 'A riddle is written on the rock shelf round the headland. The water laps at your ankles.', c: 'Twice a day I come, twice a day I go. I take the beach away and bring it back. What am I?' },
+        sup: { t: 'Safe on the SUP board', s: 'SUP boards with paddles lie on the beach.', c: 'What do you do if you fall off your board?', opts: ['Let the board go and swim to the shore', 'Hold on to the board: the leash is round your ankle', 'Stay underwater until the board is gone'] },
+        beach3: { t: 'Ready to snorkel', s: 'You leave the board on the beach. Further on there is a reef.', c: 'Put the steps in the right order.', steps: ['Try the mask: does it fit well?', 'Attach the snorkel on the left side', 'Enter the water calmly and breathe relaxed', 'Look but don’t touch anything', 'Head back to the shore in good time'] },
+        view: { t: 'View from the headland', s: 'From the highest point of the headland you see an island far away on the horizon.', c: 'What is the island you can see from this coast on a clear day?' },
+        jump: { t: 'From the rock into the sea', s: 'Splash! A question floats on a buoy.', c: 'What do you do before you jump into the sea?', opts: ['Jump straight in, that’s fastest', 'Only check whether the water is warm', 'Check it is deep enough and nobody is swimming below you'] },
+        snorkel: { t: 'The fish of the reef', s: 'Through your mask you see four kinds of fish swimming past the reef, always in the same order.', c: 'Remember the order, then tap them in the same order.' },
+        cove4: { t: 'The treasure chest on the beach', s: 'On the last little beach lies a chest with a letter lock. Use the letters in your passport.', c: 'In Spanish: the animals you have to watch out for in the sea (plural).' }
+      }
+    },
+    es: {
+      name: 'Cala to Cala', short: 'Cala to Cala',
+      lead: 'De cala en cala por la costa: por el mar poco profundo rodeando las rocas, en tabla de SUP por una bahía, saltando de una roca al mar, haciendo snorkel en un arrecife y viendo Ibiza desde el cabo. Es una carrera contra la marea: en cuanto empiezas, el agua sube. Con marea baja caminas por las plataformas de roca; con marea alta tienes que nadar. Cuanto más rápido, mejor medalla.',
+      fine: 'Inspirado en el tour “Cala to Cala” de Nuestra Aventura. Versión virtual simplificada – no es un mapa real.',
+      stamps: [['start', 'La primera cala', 'La playita donde empiezas.'], ['shelf', 'La plataforma de roca', 'Rodea el primer cabo por el mar poco profundo.'], ['sup', 'La tabla de SUP', 'Coge la tabla en la playa de la segunda cala.'],
+        ['beach3', 'La tercera cala', 'Rema hasta la tercera cala y deja allí la tabla.'], ['view', 'Vista a Ibiza', 'Sube al punto más alto del cabo.'], ['jump', 'El salto', 'Salta de la cornisa de roca al mar.'],
+        ['snorkel', 'El arrecife', 'Haz snorkel en el arrecife frente al cabo.'], ['cove4', 'La última cala', 'Nada hasta la última playita.']],
+      nbIntroT: 'Cala to Cala', nbIntro: 'El reloj corre y la marea sube. Marea baja: andar por las rocas. Marea alta: nadar. ¡Oro por debajo de 9 minutos, plata por debajo de 14!',
+      finalT: '¡Una página nueva!', finalSub: 'Ruta 8 · Next Level Sightseeing',
+      finalText: 'En la playa hay una postal: dos cascadas (una de 30 metros), un pueblo con puerto y faro, y el mirador más alto cerca de Valencia. «La última ruta. ¡Trae tu brújula!»',
+      finalBtn: 'Empezar Ruta 8 · Next Level Sightseeing',
+      pz: {
+        start: { t: 'El candado de la playa', s: 'Bajo una sombrilla de la primera playa hay una caja con candado de números. ¡El reloj ya corre!', c: 'Código = las calas de esta ruta · los idiomas de este juego · las rutas de este juego.' },
+        shelf: { t: 'Enigma en la plataforma', s: 'En la plataforma de roca del cabo hay un enigma. El agua te moja los tobillos.', c: 'Dos veces al día vengo, dos veces al día me voy. Me llevo la playa y la devuelvo. ¿Qué soy?' },
+        sup: { t: 'Seguro en la tabla', s: 'En la playa hay tablas de SUP con remos.', c: '¿Qué haces si te caes de la tabla?', opts: ['Soltar la tabla y nadar a la orilla', 'Quedarte con la tabla: el invento va atado al tobillo', 'Quedarte bajo el agua hasta que se vaya la tabla'] },
+        beach3: { t: 'Listo para el snorkel', s: 'Dejas la tabla en la playa. Más allá hay un arrecife.', c: 'Ordena los pasos.', steps: ['Probar la máscara: ¿ajusta bien?', 'Sujetar el tubo en el lado izquierdo', 'Entrar con calma y respirar tranquilo', 'Mirar sin tocar nada', 'Volver a la orilla a tiempo'] },
+        view: { t: 'Vista desde el cabo', s: 'Desde lo más alto del cabo ves una isla a lo lejos en el horizonte.', c: '¿Cómo se llama la isla que se ve desde esta costa en un día claro?' },
+        jump: { t: 'De la roca al mar', s: '¡Chof! En una boya flota una pregunta.', c: '¿Qué haces antes de saltar al mar?', opts: ['Saltar directamente, es lo más rápido', 'Solo mirar si el agua está caliente', 'Comprobar que es profundo y que no hay nadie debajo'] },
+        snorkel: { t: 'Los peces del arrecife', s: 'Por la máscara ves cuatro tipos de peces pasar junto al arrecife, siempre en el mismo orden.', c: 'Recuerda el orden y tócalos después igual.' },
+        cove4: { t: 'El cofre de la playa', s: 'En la última playita hay un cofre con candado de letras. Usa las letras de tu pasaporte.', c: 'Los animales con los que hay que tener cuidado en el mar (plural).' }
+      }
+    }
+  },
+  sightseeing: {
+    nl: {
+      name: 'Next Level Sightseeing', short: 'Next Level Sightseeing',
+      lead: 'De laatste route: twee watervallen, waarvan één van wel 30 meter, een havendorp met een vuurtoren en het hoogste uitkijkpunt in de buurt van Valencia. Dit is weer een kompasroute: geen punten op de kaart en geen pijl, alleen richting en afstand in je notitieboek.',
+      fine: 'Geïnspireerd op de tour “Next Level Sightseeing” van Nuestra Aventura. Een virtuele, vereenvoudigde versie – geen echte kaart.',
+      stamps: [['start', 'Het kompas', 'Bij het startbord.'], ['fallA', 'De eerste waterval', 'Zwem in de poel onder de eerste waterval.'], ['lip', 'Boven de grote waterval', 'Aan de rand boven de waterval van 30 meter.'],
+        ['bigpool', 'Onder de grote waterval', 'Zwem in de poel onder de grote waterval.'], ['tower', 'Het hoogste uitkijkpunt', 'Op het uitkijkplatform boven op de heuvel.'], ['harbor', 'De haven', 'Op de kade van het havendorp.'],
+        ['pier', 'De steiger', 'Aan het eind van de houten steiger.'], ['faro', 'De vuurtoren', 'Bij de vuurtoren aan de overkant van de baai.']],
+      hints: { start: 'Bij het startbord, vlak bij waar je begint.', fallA: 'In de poel onder de eerste waterval.', lip: 'Aan de oostkant, boven op de rand van de grote waterval.', bigpool: 'In de poel onder de grote waterval.', tower: 'Op het platform boven op de heuvel op het westelijke plateau. Klim er met een sprongetje op.', harbor: 'Op de kade, aan de oostkant van de baai.', pier: 'Aan het eind van de houten steiger in de baai.', faro: 'Aan de westkant van de baai.' },
+      nbIntroT: 'Next Level Sightseeing', nbIntro: 'De laatste route, weer met kompas. 0° = noord, 90° = oost, 180° = zuid, 270° = west.',
+      finalT: 'Alle routes voltooid!', finalSub: '8 / 8 · Nuestra Aventura',
+      finalText: 'Boven in de vuurtoren blader je door je reisboek: Buñol, The Waterfall, The Chains, de grotten, het stuwmeer, de fotospeurtocht, de race tegen het getij en nu de vuurtoren. Acht routes, acht verhalen. ¡Enhorabuena, aventurero!',
+      finalSoon: 'Je hebt alle acht routes gespeeld. Je kunt elke route opnieuw kiezen in het beginscherm.',
+      pz: {
+        start: { t: 'Lees je kompas', s: 'Bij het startbord ligt een kistje: “Weet je je richtingen nog?”', c: 'Je kijkt precies naar het westen (270°). Welke richting is dan aan je rechterhand?', opts: ['Noord', 'Zuid', 'Oost'] },
+        fallA: { t: 'Raadsel bij de eerste waterval', s: 'Achter de waterval staat een raadsel op de rots.', c: 'Ik val de hele dag, maar ik raak nooit gewond. Wat ben ik?' },
+        lip: { t: 'Geheimschrift boven de waterval', s: 'Op de rots aan de rand is een woord gekerfd. Elke letter is één plek in het alfabet opgeschoven.', c: 'Wat je ziet als de zon door de nevel van de waterval schijnt.', code: 'SFHFOCPPH' },
+        bigpool: { t: 'De stenen onder de waterval', s: 'Vier gekleurde stenen lichten op onder het water – zes keer.', c: 'Onthoud de volgorde en tik de stenen daarna na.' },
+        tower: { t: 'Het hoogste uitkijkpunt', s: 'Vanaf het platform zie je in het noordwesten ver weg een grote stad liggen.', c: 'Welke stad is dat?' },
+        harbor: { t: 'Het slot op de kade', s: 'Op de kade staat een kist met een cijferslot.', c: 'Code = het aantal boten in de baai · het aantal watervallen vandaag · het aantal talen van dit spel.' },
+        pier: { t: 'Aan boord', s: 'Aan het eind van de steiger ligt een bootje. Op een bordje staan de regels door elkaar.', c: 'Zet de stappen in de goede volgorde.', steps: ['Zwemvest aan', 'Wachten tot de schipper zegt dat het mag', 'In het midden van de boot instappen', 'Gaan zitten en vasthouden', 'Handen binnenboord tijdens het varen'] },
+        faro: { t: 'De vuurtoren', s: 'De deur van de vuurtoren zit op slot. Gebruik de letters uit je paspoort.', c: 'Het Spaanse woord voor uitkijkpunt.' }
+      }
+    },
+    en: {
+      name: 'Next Level Sightseeing', short: 'Next Level Sightseeing',
+      lead: 'The last route: two waterfalls, one of them 30 metres high, a harbour village with a lighthouse and the highest viewpoint near Valencia. This is a compass route again: no points on the map and no arrow, only direction and distance in your notebook.',
+      fine: 'Inspired by the “Next Level Sightseeing” tour by Nuestra Aventura. A simplified virtual version – not a real map.',
+      stamps: [['start', 'The compass', 'At the start sign.'], ['fallA', 'The first waterfall', 'Swim in the pool below the first waterfall.'], ['lip', 'Above the big waterfall', 'At the edge above the 30-metre waterfall.'],
+        ['bigpool', 'Below the big waterfall', 'Swim in the pool below the big waterfall.'], ['tower', 'The highest viewpoint', 'On the viewing platform on top of the hill.'], ['harbor', 'The harbour', 'On the quay of the harbour village.'],
+        ['pier', 'The jetty', 'At the end of the wooden jetty.'], ['faro', 'The lighthouse', 'At the lighthouse across the bay.']],
+      hints: { start: 'At the start sign, close to where you begin.', fallA: 'In the pool below the first waterfall.', lip: 'On the east side, on top of the edge of the big waterfall.', bigpool: 'In the pool below the big waterfall.', tower: 'On the platform on top of the hill on the western plateau. Hop onto it.', harbor: 'On the quay, on the east side of the bay.', pier: 'At the end of the wooden jetty in the bay.', faro: 'On the west side of the bay.' },
+      nbIntroT: 'Next Level Sightseeing', nbIntro: 'The last route, with a compass again. 0° = north, 90° = east, 180° = south, 270° = west.',
+      finalT: 'All routes completed!', finalSub: '8 / 8 · Nuestra Aventura',
+      finalText: 'At the top of the lighthouse you leaf through your travel book: Buñol, The Waterfall, The Chains, the caves, the reservoir, the photo hunt, the race against the tide and now the lighthouse. Eight routes, eight stories. ¡Enhorabuena, aventurero!',
+      finalSoon: 'You have played all eight routes. You can pick any route again on the start screen.',
+      pz: {
+        start: { t: 'Read your compass', s: 'A box lies by the start sign: “Do you still know your directions?”', c: 'You are facing exactly west (270°). Which direction is on your right?', opts: ['North', 'South', 'East'] },
+        fallA: { t: 'Riddle at the first waterfall', s: 'A riddle is written on the rock behind the waterfall.', c: 'I fall all day long but never get hurt. What am I?' },
+        lip: { t: 'Secret code above the waterfall', s: 'A word is carved into the rock at the edge. Every letter has moved one place in the alphabet.', c: 'What you see when the sun shines through the spray of the waterfall.', code: 'SBJOCPX' },
+        bigpool: { t: 'The stones below the waterfall', s: 'Four coloured stones light up under the water – six times.', c: 'Remember the order, then tap the stones in the same order.' },
+        tower: { t: 'The highest viewpoint', s: 'From the platform you see a big city far away to the north-west.', c: 'Which city is that?' },
+        harbor: { t: 'The lock on the quay', s: 'A chest with a number lock stands on the quay.', c: 'Code = the number of boats in the bay · the number of waterfalls today · the number of languages in this game.' },
+        pier: { t: 'All aboard', s: 'A small boat lies at the end of the jetty. The rules on a sign are mixed up.', c: 'Put the steps in the right order.', steps: ['Life jacket on', 'Wait until the skipper says you can board', 'Step into the middle of the boat', 'Sit down and hold on', 'Keep your hands inside while sailing'] },
+        faro: { t: 'The lighthouse', s: 'The lighthouse door is locked. Use the letters in your passport.', c: 'The Spanish word for viewpoint.' }
+      }
+    },
+    es: {
+      name: 'Next Level Sightseeing', short: 'Next Level Sightseeing',
+      lead: 'La última ruta: dos cascadas, una de 30 metros, un pueblo con puerto y faro y el mirador más alto cerca de Valencia. Vuelve a ser una ruta de brújula: sin puntos en el mapa ni flecha, solo dirección y distancia en tu cuaderno.',
+      fine: 'Inspirado en el tour “Next Level Sightseeing” de Nuestra Aventura. Versión virtual simplificada – no es un mapa real.',
+      stamps: [['start', 'La brújula', 'Junto al cartel de salida.'], ['fallA', 'La primera cascada', 'Nada en la poza bajo la primera cascada.'], ['lip', 'Sobre la gran cascada', 'En el borde sobre la cascada de 30 metros.'],
+        ['bigpool', 'Bajo la gran cascada', 'Nada en la poza bajo la gran cascada.'], ['tower', 'El mirador más alto', 'En la plataforma en lo alto del cerro.'], ['harbor', 'El puerto', 'En el muelle del pueblo.'],
+        ['pier', 'El embarcadero', 'Al final del embarcadero de madera.'], ['faro', 'El faro', 'En el faro al otro lado de la bahía.']],
+      hints: { start: 'Junto al cartel de salida, cerca de donde empiezas.', fallA: 'En la poza bajo la primera cascada.', lip: 'En el lado este, en el borde de la gran cascada.', bigpool: 'En la poza bajo la gran cascada.', tower: 'En la plataforma en lo alto del cerro de la meseta oeste. Súbete de un salto.', harbor: 'En el muelle, en el lado este de la bahía.', pier: 'Al final del embarcadero de madera en la bahía.', faro: 'En el lado oeste de la bahía.' },
+      nbIntroT: 'Next Level Sightseeing', nbIntro: 'La última ruta, otra vez con brújula. 0° = norte, 90° = este, 180° = sur, 270° = oeste.',
+      finalT: '¡Todas las rutas completadas!', finalSub: '8 / 8 · Nuestra Aventura',
+      finalText: 'En lo alto del faro hojeas tu cuaderno de viaje: Buñol, The Waterfall, The Chains, las cuevas, el embalse, la búsqueda fotográfica, la carrera contra la marea y ahora el faro. Ocho rutas, ocho historias. ¡Enhorabuena, aventurero!',
+      finalSoon: 'Has jugado las ocho rutas. Puedes volver a elegir cualquier ruta en la pantalla de inicio.',
+      pz: {
+        start: { t: 'Lee tu brújula', s: 'Junto al cartel de salida hay una caja: «¿Recuerdas los puntos cardinales?»', c: 'Miras exactamente al oeste (270°). ¿Qué dirección tienes a tu derecha?', opts: ['Norte', 'Sur', 'Este'] },
+        fallA: { t: 'Enigma en la primera cascada', s: 'En la roca detrás de la cascada hay un enigma.', c: 'Caigo todo el día pero nunca me hago daño. ¿Qué soy?' },
+        lip: { t: 'Código sobre la cascada', s: 'En la roca del borde hay una palabra tallada. Cada letra se ha movido un lugar en el alfabeto.', c: 'Lo que ves cuando el sol atraviesa la neblina de la cascada.', code: 'BSDPJSJT' },
+        bigpool: { t: 'Las piedras bajo la cascada', s: 'Cuatro piedras de colores se iluminan bajo el agua – seis veces.', c: 'Recuerda el orden y toca después las piedras igual.' },
+        tower: { t: 'El mirador más alto', s: 'Desde la plataforma ves al noroeste, muy lejos, una gran ciudad.', c: '¿Qué ciudad es?' },
+        harbor: { t: 'El candado del muelle', s: 'En el muelle hay un cofre con candado de números.', c: 'Código = los barcos de la bahía · las cascadas de hoy · los idiomas de este juego.' },
+        pier: { t: 'A bordo', s: 'Al final del embarcadero hay una barca. Las normas de un cartel están desordenadas.', c: 'Ordena los pasos.', steps: ['Chaleco salvavidas puesto', 'Esperar a que el patrón diga que se puede subir', 'Subir por el centro de la barca', 'Sentarse y agarrarse', 'Manos dentro durante la travesía'] },
+        faro: { t: 'El faro', s: 'La puerta del faro está cerrada. Usa las letras de tu pasaporte.', c: 'Lo que es este faro: un lugar desde el que mirar.' }
+      }
+    }
+  }
+});
+for (const id of ['power', 'nature', 'cala', 'sightseeing']) for (const l of ['nl', 'en', 'es']) LVTXT[id][l].mFine = LVTXT[id][l].fine;
+Object.assign(LVTXT.caves.nl, { finalBtn: 'Begin Route 5 · The Power of Water', finalSoon: '' });
+Object.assign(LVTXT.caves.en, { finalBtn: 'Start Route 5 · The Power of Water', finalSoon: '' });
+Object.assign(LVTXT.caves.es, { finalBtn: 'Empezar Ruta 5 · The Power of Water', finalSoon: '' });
+// "Hoe meer je ervan neemt …" in route 4 / "gruta menos una" fix-ups are fine; set play modes of older routes
+for (const id of ['bunol', 'waterfall', 'power']) LEVELS[id].mode = LEVELS[id].mode || 'classic';
+for (const id of ['chains', 'caves']) LEVELS[id].mode = 'compass';
+
+const MODE_UI = {
+  nl: { classic: 'klassiek', compass: 'kompas', photo: 'fotospeurtocht', tide: 'race tegen het getij', photoNext: 'Zoek de plek van deze foto', temp: ['IJskoud', 'Koud', 'Lauw', 'Warm', 'Heet!'],
+        tideUp: 'Het water stijgt!', tideHigh: 'Hoog water – de rotsplaten staan onder water.', time: 'tijd', tideW: 'getij', medal: ['🥇 Goud', '🥈 Zilver', '🥉 Brons'], yourTime: 'Jouw tijd', best: 'beste',
+        supOn: 'Je staat op het SUP-board – peddel naar het derde baaitje.', supOff: 'Je laat het board op het strand liggen.', photoNew: 'Nieuwe foto in je notitieboek', modeL: 'Speelstijl' },
+  en: { classic: 'classic', compass: 'compass', photo: 'photo hunt', tide: 'race against the tide', photoNext: 'Find the place in this photo', temp: ['Freezing', 'Cold', 'Lukewarm', 'Warm', 'Hot!'],
+        tideUp: 'The water is rising!', tideHigh: 'High tide – the rock shelves are under water.', time: 'time', tideW: 'tide', medal: ['🥇 Gold', '🥈 Silver', '🥉 Bronze'], yourTime: 'Your time', best: 'best',
+        supOn: 'You are on the SUP board – paddle to the third cove.', supOff: 'You leave the board on the beach.', photoNew: 'New photo in your notebook', modeL: 'Play style' },
+  es: { classic: 'clásica', compass: 'brújula', photo: 'búsqueda fotográfica', tide: 'carrera contra la marea', photoNext: 'Busca el lugar de esta foto', temp: ['Helado', 'Frío', 'Templado', 'Caliente', '¡Te quemas!'],
+        tideUp: '¡El agua sube!', tideHigh: 'Marea alta: las plataformas de roca están bajo el agua.', time: 'tiempo', tideW: 'marea', medal: ['🥇 Oro', '🥈 Plata', '🥉 Bronce'], yourTime: 'Tu tiempo', best: 'mejor',
+        supOn: 'Estás en la tabla de SUP: rema hasta la tercera cala.', supOff: 'Dejas la tabla en la playa.', photoNew: 'Nueva foto en tu cuaderno', modeL: 'Modo de juego' }
+};
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function tempWord(d) { const t = MODE_UI[lang].temp; return d > 120 ? '🧊 ' + t[0] : d > 60 ? '❄️ ' + t[1] : d > 30 ? '🌤️ ' + t[2] : d > 12 ? '☀️ ' + t[3] : '🔥 ' + t[4]; }
+
+/* ------------------------------------------------------------ photo hunt: render the photos */
+function capturePhotos() {
+  if (LV.mode !== 'photo') return;
+  const saved = S.camPos.slice(), out = document.createElement('canvas'), cw = canvas.width, ch = canvas.height; out.width = 360; out.height = 240;
+  canvas.width = 720; canvas.height = 480; gl.viewport(0, 0, 720, 480);
+  const c2 = out.getContext('2d');
+  for (const p of STAMP_POS()) {
+    const cm = p.cam || [-6, 3, -6], y0 = Math.max(height(p.x, p.z), waterY(p.z)), from = [p.x + cm[0], 0, p.z + cm[2]];
+    from[1] = Math.max(height(from[0], from[2]), waterY(from[2])) + cm[1];
+    PHOTO_CAM = { pos: from, look: [p.x, y0 + 1, p.z] };
+    try { render(); c2.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, 360, 240);
+      PHOTOS[p.id] = out.toDataURL('image/jpeg', .78); const im = new Image(); im.src = PHOTOS[p.id]; PHOTOS[p.id + '_img'] = im; } catch (e) {}
+  }
+  PHOTO_CAM = null; S.camPos = saved; canvas.width = cw; canvas.height = ch; gl.viewport(0, 0, cw, ch);
+}
+
+/* ------------------------------------------------------------ scenery */
+function buildLevelProps3(g) {
+  const sign = (z, x) => { const y = height(x, z); g.box(x, y + 1, z, .15, 2, .15, C.trunk); g.box(x, y + 1.6, z, .1, 1, 1.6, [0.12, 0.30, 0.23]); COLLIDERS.push({ x, z, r: .5 }); };
+  if (LV.id === 'power') {
+    // the dam across the canyon, with the reservoir behind it
+    { const z = 95.5, ws = wallStart(97) + 6, top = waterY(80) + 1.2, bot = waterY(110) - 3, c = cx(z), con = [.78, .76, .72];
+      g.box(c, (top + bot) / 2, z, ws * 2, top - bot, 3.2, con); g.box(c, top + .6, z - .6, ws * 2, .9, .25, [.6, .6, .58]); g.box(c, top + .6, z + 1.4, ws * 2, .9, .25, [.6, .6, .58]);
+      for (let i = -3; i <= 3; i++) g.box(c + i * ws / 3.5, (top + bot) / 2, z + 1.7, .9, top - bot, .4, con.map(v => v * .9)); }
+    // mirador railing is built by the generic mirador code; the workers' village: two neat rows of houses and a small church
+    { const V = LV.vil;
+      for (let r = 0; r < 2; r++) for (let i = 0; i < 3; i++) houseG(g, V.x - 7 + i * 7, V.z - 6 + r * 12, 4.2, 3.6, 2.8, r ? Math.PI : 0, WHITE, TERRA);
+      const chx = V.x + 13, chz = V.z, chy = height(chx, chz); g.box(chx, chy + 2, chz, 4, 4, 6, WHITE); g.cone(chx, chy + 4, chz, 4.2, 2, 4, TERRA);
+      g.box(chx, chy + 4, chz - 3.2, 1.6, 8, 1.6, WHITE); g.cone(chx, chy + 8, chz - 3.2, 1.3, 1.6, 4, TERRA); COLLIDERS.push({ x: chx, z: chz, r: 3.4 }, { x: chx, z: chz - 3.2, r: 1.2 });
+      sign(V.z + 9, V.x - 12); }
+    // picnic table by the last pool
+    { const P = LV.picnic, ty = height(P.x, P.z); g.box(P.x, ty + .75, P.z, 1.6, .08, 2.4, C.wood); for (const s of [-1, 1]) g.box(P.x + s * 1.1, ty + .42, P.z, .35, .06, 2.4, C.wood);
+      for (const s of [-1, 1]) for (const t of [-1, 1]) g.box(P.x + s * .6, ty + .37, P.z + t, .08, .74, .08, C.trunk);
+      g.box(P.x, ty + .95, P.z - .3, .6, .35, .4, [.7, .5, .25]); COLLIDERS.push({ x: P.x, z: P.z, r: 1.3 }); }
+  }
+  if (LV.id === 'nature') {
+    // the old mill: roofless stone walls with trees growing through, and a broken mill wheel by the river
+    { const R = LV.ruins, st = [.72, .66, .58];
+      for (const [dx, dz, w, d] of [[0, -3, 7, .5], [0, 3, 7, .5], [-3.5, 0, .5, 6], [3.5, -1.8, .5, 2.4], [8, 2, 4, .5], [10, 4, .5, 4]]) {
+        const x = R.x + dx, z = R.z + dz, y = height(x, z), h = 1.6 + ((dx * 7 + dz * 3) % 3 + 3) % 3 * .6;
+        g.box(x, y + h / 2, z, w, h, d, st); const n = Math.max(1, Math.round(Math.max(w, d) / 1.2));
+        for (let k = 0; k < n; k++) { const t = n > 1 ? k / (n - 1) - .5 : 0; COLLIDERS.push({ x: x + (w > d ? t * w : 0), z: z + (d > w ? t * d : 0), r: .6 }); } }
+      for (const [dx, dz, s] of [[0, 0, 1.3], [9, 3.5, 1.1]]) { const x = R.x + dx, z = R.z + dz, y = height(x, z);
+        g.box(x, y + 2 * s, z, .35 * s, 4 * s, .35 * s, C.trunk); g.cone(x, y + 3 * s, z, 2.2 * s, 3.2 * s, 7, C.pine, C.pine2); g.cone(x, y + 5 * s, z, 1.5 * s, 2.6 * s, 7, C.pine2, C.pine); COLLIDERS.push({ x, z, r: .4 }); }
+      const wx = cx(R.z) + riverW(R.z) - .3, wz = R.z - 1, wy = waterY(wz) + 1.3;
+      for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; g.box(wx, wy + Math.sin(a) * 1.4, wz + Math.cos(a) * 1.4, .3, .5, .2, C.wood); }
+      g.box(wx, wy, wz, .25, .25, 2.8, C.wood); }
+    // reeds along the water
+    seed = 71; for (let i = 0; i < 260; i++) { const z = 172 + rnd() * 40, side = rnd() < .75 ? 1 : -1, x = cx(z) + side * (riverW(z) - .6 + rnd() * 2.6), y = height(x, z);
+      if (y < waterY(z) - .8) continue; const h = 1.6 + rnd() * 1.4, col = rnd() < .5 ? [.55, .62, .3] : [.72, .68, .42];
+      g.box(x, y + h / 2, z, .05, h, .05, col, rnd() * 3); g.box(x, y + h + .1, z, .09, .35, .09, [.55, .42, .28]); }
+    // village square: café, tables, parasols, fountain
+    { const P = LV.plaza; houseG(g, P.x + 7, P.z, 6, 5, 3.4, -Math.PI / 2, WHITE, TERRA);
+      const tables = [[-2, -2], [-2, 2], [1.5, -2], [1.5, 2]];
+      for (const [dx, dz] of tables) { const x = P.x + dx, z = P.z + dz, y = height(x, z); g.box(x, y + .72, z, .9, .06, .9, [.92, .92, .9]); g.box(x, y + .36, z, .08, .72, .08, [.3, .3, .3]); COLLIDERS.push({ x, z, r: .6 }); }
+      for (const [dx, dz] of [[-2, 0], [1.5, 0]]) { const x = P.x + dx, z = P.z + dz, y = height(x, z); g.box(x, y + 1.2, z, .06, 2.4, .06, [.3, .3, .3]); g.cone(x, y + 2.2, z, 1.9, .6, 8, [.9, .45, .2], [.95, .9, .8]); }
+      const fx = P.x - 6, fz = P.z, fy = height(fx, fz); cylG(g, fx, fy, fz, 1.4, 1.4, .6, 12, [.8, .76, .68]); cylG(g, fx, fy + .6, fz, .25, .15, 1.1, 8, [.8, .76, .68]); COLLIDERS.push({ x: fx, z: fz, r: 1.5 }); }
+    // the guide's camp: fire with a paella pan, table, cool box
+    { const P = LV.camp, y = height(P.x, P.z);
+      for (let k = 0; k < 7; k++) { const a = k / 7 * Math.PI * 2; g.rock(P.x + Math.cos(a) * .6, y - .05, P.z + Math.sin(a) * .6, .22, [.5, .48, .45]); }
+      g.cone(P.x, y, P.z, .35, .6, 6, [.95, .5, .1], [.98, .75, .2]); cylG(g, P.x, y + .45, P.z, .55, .6, .08, 16, [.25, .25, .27]); cylG(g, P.x, y + .5, P.z, .52, .52, .02, 16, [.92, .7, .2]);
+      COLLIDERS.push({ x: P.x, z: P.z, r: .9 }); g.box(P.x - 2.4, y + .75, P.z, 1.4, .08, 2, C.wood); for (const s of [-1, 1]) for (const t of [-1, 1]) g.box(P.x - 2.4 + s * .55, y + .37, P.z + t * .8, .08, .74, .08, C.trunk);
+      COLLIDERS.push({ x: P.x - 2.4, z: P.z, r: 1.1 }); }
+    sign(102, trailX(102) + 2.2);
+  }
+  if (LV.id === 'cala') {
+    // parasols and towels on the first and last beach, SUP boards on the second beach
+    for (const k of [0, 3]) { const b = LV.b[k];
+      for (let i = 0; i < 3; i++) { const x = b.x - 3 - i * 2.5, z = b.z - 4 + i * 4, y = height(x, z), col = [[.9, .3, .25], [.2, .55, .75], [.95, .8, .2]][i];
+        g.box(x, y + 1.1, z, .06, 2.2, .06, [.9, .9, .9]); g.cone(x, y + 2, z, 1.6, .5, 8, col, [.97, .95, .9]); g.box(x + 1, y + .03, z, .9, .02, 1.9, col.map(v => v * .9 + .1)); } }
+    { const b = LV.b[1]; for (let i = 0; i < 3; i++) { const x = b.x + .5 + i * 1.1, z = b.z + 3, y = height(x, z); g.box(x, y + .07, z, .7, .1, 3, [[.95, .55, .2], [.2, .6, .8], [.95, .95, .92]][i]); g.box(x + .1, y + .2, z - .5, .05, .05, 2.2, [.2, .2, .2]); } }
+    // boats at anchor in the coves
+    for (const [z, dx] of [[226, 16], [388, 20], [536, 14]]) { const x = coastX(z) + dx, y = LV.seaY + .25; g.box(x, y, z, 1.8, .7, 5, [.95, .95, .93]); g.box(x, y + .4, z - .6, 1.4, .5, 1.8, [.2, .45, .7]); g.box(x, y + 2.4, z + .5, .08, 4, .08, [.6, .6, .6]); COLLIDERS.push({ x, z: z - 1.5, r: 1.1 }, { x, z: z + 1.5, r: 1.1 }); }
+    // reef: coloured rocks and fish under the water
+    { const R = LV.reef; seed = 83;
+      for (let i = 0; i < 26; i++) { const x = R.x - 7 + rnd() * 14, z = R.z - 9 + rnd() * 18, y = height(x, z); g.rock(x, y - .2, z, .5 + rnd() * .8, [[.85, .45, .4], [.95, .7, .3], [.55, .35, .6], [.4, .65, .55]][i % 4]); }
+      for (let i = 0; i < 40; i++) { const x = R.x - 6 + rnd() * 12, z = R.z - 8 + rnd() * 16, y = LV.seaY - 1.2 - rnd() * 2, col = [[.98, .6, .1], [.2, .5, .95], [.95, .9, .2], [.9, .3, .5]][i % 4], a = rnd() * 6.3;
+        g.box(x, y, z, .07, .16, .3, col, a); g.box(x + Math.sin(a) * -.18, y, z + Math.cos(a) * -.18, .03, .14, .1, col, a); } }
+    // viewpoint bench on the headland
+    { const V = LV.viewP, y = height(V.x, V.z); g.box(V.x + 1.4, y + .45, V.z, .4, .08, 1.8, C.wood); for (const s of [-1, 1]) g.box(V.x + 1.4, y + .22, V.z + s * .7, .08, .44, .08, C.trunk); }
+    // Ibiza on the horizon
+    { const I = LV.island; seed = 91; cylG(g, I.x, LV.seaY - 2, I.z, 170, 90, 22, 18, [.5, .56, .6]); g.cone(I.x - 30, LV.seaY + 19, I.z + 20, 80, 26, 12, [.52, .57, .62], [.48, .54, .6]); g.cone(I.x + 50, LV.seaY + 19, I.z - 40, 60, 18, 12, [.5, .56, .6]); }
+    sign(LV.spawn.zz + 1, LV.spawn.x - 2);
+  }
+  if (LV.id === 'sightseeing') {
+    sign(30, trailX(30) + 2.2);
+    // viewing platform on top of the hill (hop onto it)
+    { const T = LV.towerP, y = T.y; g.box(T.x, y + .4, T.z, 3.6, .8, 3.6, [.7, .6, .5]); for (const s of [-1, 1]) { g.box(T.x + s * 1.75, y + 1.3, T.z, .08, 1, 3.6, C.trunk); g.box(T.x, y + 1.3, T.z + s * 1.75, 3.6, 1, .08, C.trunk); }
+      COLLIDERS.push({ x: T.x, z: T.z, r: 1.9, top: y + .8 }); }
+    // harbour village on the east shore of the bay
+    seed = 97; for (let i = 0; i < 9; i++) { const z = 500 + i * 8 + rnd() * 3, x = cx(z) + riverW(z) + 10 + rnd() * 8; houseG(g, x, z, 4 + rnd() * 2, 4 + rnd() * 1.5, 3 + rnd() * 2, rnd() * .4 - .2, i % 3 ? WHITE : [.96, .86, .62], TERRA); }
+    { const z0 = 506, z1 = 548; for (let z = z0; z < z1; z += 3) { const x = cx(z) + riverW(z) + 1.4, y = waterY(z) + .5; g.box(x, y - .6, z, 2.4, 1.6, 3.05, [.72, .7, .66]); } }
+    // five boats in the bay
+    [[500, -18], [516, -30], [532, -8], [548, -24], [570, -36]].forEach(([z, dx]) => { const x = cx(z) + riverW(z) + dx, y = waterY(z) + .25;
+      g.box(x, y, z, 1.6, .6, 4.4, [.95, .95, .93]); g.box(x, y + .35, z - .4, 1.2, .5, 1.6, [.75, .2, .2]); g.box(x, y + 2.2, z + .4, .07, 3.8, .07, [.55, .55, .55]); COLLIDERS.push({ x, z: z - 1.2, r: 1 }, { x, z: z + 1.2, r: 1 }); });
+    // wooden jetty (walkable) into the bay
+    { const P = LV.pier; for (let k = 0; k <= 12; k++) { const x = P.x0 - k, y = P.y; g.box(x, y - .05, P.z, 1.05, .12, 1.8, C.wood); if (k % 3 === 0) for (const s of [-1, 1]) g.box(x, y - 1.2, P.z + s * .8, .14, 2.4, .14, C.trunk);
+      COLLIDERS.push({ x, z: P.z, r: .95, top: y }); } }
+    // lighthouse on the west point
+    { const F = LV.faroP, y = height(F.x, F.z);
+      cylG(g, F.x, y, F.z, 1.9, 1.5, 4, 14, [.96, .95, .92]); cylG(g, F.x, y + 4, F.z, 1.5, 1.25, 3, 14, [.82, .2, .18]); cylG(g, F.x, y + 7, F.z, 1.25, 1.05, 3, 14, [.96, .95, .92]);
+      cylG(g, F.x, y + 10, F.z, 1.05, .95, 1.4, 14, [.85, .92, .95]); g.cone(F.x, y + 11.4, F.z, 1.4, 1.4, 14, [.82, .2, .18]); COLLIDERS.push({ x: F.x, z: F.z, r: 2.1 }); }
+    // Valencia far away to the north-west
+    { seed = 101; for (let i = 0; i < 70; i++) { const x = cx(0) - 250 - rnd() * 170, z = -140 - rnd() * 160, h = 10 + rnd() * rnd() * 50; g.box(x, h / 2 + 12, z, 10 + rnd() * 14, h, 10 + rnd() * 14, [.72, .74, .78].map(v => v * (.9 + rnd() * .15))); } }
+  }
+}
+function buildLevelWater3(g) {
+  if (LV.coast) { const y = LV.seaY, x0 = cx(300) - 200, x1 = cx(300) + 1600;
+    const v = [[x0, -900], [x1, -900], [x0, 1500], [x1, 1500]].map(([x, z]) => g.vert(x, y, z, 0, 1, 0, 0, 0, 0)); g.tri(v[0], v[2], v[1]); g.tri(v[1], v[2], v[3]); }
 }
 
 let ROUTE_ID = (() => { try { const r = localStorage.getItem('avh-route'); if (r && LEVELS[r]) return r; } catch (e) {} return 'bunol'; })();
@@ -794,8 +1866,13 @@ function prog(vs, fs) {
   return { p, u, a: { pos: gl.getAttribLocation(p, 'aPos'), nor: gl.getAttribLocation(p, 'aNor'), col: gl.getAttribLocation(p, 'aCol') } };
 }
 const FOG = `
-uniform vec3 uFog; uniform vec3 uCam; uniform vec3 uSun;
-vec3 applyFog(vec3 c, vec3 wp){ float d = length(wp - uCam); float f = 1.0 - exp(-pow(d * 0.0042, 1.6)); vec3 v = normalize(wp - uCam);
+uniform vec3 uFog; uniform vec3 uCam; uniform vec3 uSun; uniform float uDark; uniform vec3 uLampP; uniform vec3 uLampD;
+vec3 lamp(vec3 n, vec3 wp){ vec3 L = uLampP - wp; float d = max(length(L), 0.001); L /= d;
+  float sp = smoothstep(0.78, 0.97, dot(-L, uLampD)), at = 1.0 / (1.0 + d * d * 0.035);
+  float lit = max(dot(n, L) * 0.75 + 0.25, 0.0);
+  return vec3(1.0, 0.92, 0.78) * (0.09 + (0.6 + 2.6 * sp) * at * lit); }
+uniform float uFogK;
+vec3 applyFog(vec3 c, vec3 wp){ float d = length(wp - uCam) * uFogK; float f = 1.0 - exp(-pow(d * 0.0042, 1.6)); vec3 v = normalize(wp - uCam);
   float s = pow(max(dot(v, uSun), 0.0), 8.0); vec3 fc = mix(uFog, vec3(1.0, 0.86, 0.66), s * 0.6); return mix(c, fc, clamp(f, 0.0, 1.0)); }`;
 const LIT_VS = `
 attribute vec3 aPos; attribute vec3 aNor; attribute vec3 aCol;
@@ -828,11 +1905,13 @@ void main(){
   float dif = max(dot(n, uSun), 0.0);
   vec3 sky = mix(vec3(0.42,0.36,0.32), vec3(0.62,0.74,0.80), n.y * 0.5 + 0.5);
   vec3 c = col * (sky * 0.62 + vec3(1.0,0.86,0.68) * dif * 0.95);
+  if (uDark > 0.0) { if (dot(n, uLampP - vW) < 0.0) n = -n; c = mix(c, col * lamp(n, vW), uDark); }
   gl_FragColor = vec4(applyFog(c, vW), uAlpha);
 }`;
 const WATER_VS = `
 attribute vec3 aPos; attribute vec3 aNor; uniform mat4 uVP; uniform float uTime; varying vec3 vW; varying vec3 vN;
-void main(){ vec3 p = aPos; if (aNor.y > 0.5) p.y += sin(p.x*0.8 + uTime*1.6)*0.04 + sin(p.z*0.6 - uTime*2.1)*0.05; vW = p; vN = aNor; gl_Position = uVP * vec4(p,1.0); }`;
+uniform float uTide;
+void main(){ vec3 p = aPos; p.y += uTide; if (aNor.y > 0.5) p.y += sin(p.x*0.8 + uTime*1.6)*0.04 + sin(p.z*0.6 - uTime*2.1)*0.05; vW = p; vN = aNor; gl_Position = uVP * vec4(p,1.0); }`;
 const WATER_FS = `precision highp float; varying vec3 vW; varying vec3 vN; uniform float uTime;
 ${FOG}
 float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
@@ -854,6 +1933,7 @@ void main(){
   c += vec3(0.10,0.18,0.14) * ripple * 0.055;
   vec3 h = normalize(uSun + v); c += vec3(1.0,0.92,0.78) * pow(max(dot(vec3(0.0,1.0,0.0) + (r-0.5)*0.25, h), 0.0), 90.0) * 1.7;
   c += smoothstep(0.80, 0.97, r) * 0.12;
+  if (uDark > 0.0) c = mix(c, (vec3(0.05,0.32,0.34) + vec3(0.3) * smoothstep(0.7, 0.95, r)) * lamp(vec3(0.0,1.0,0.0), vW) * 1.4, uDark);
   gl_FragColor = vec4(applyFog(c, vW), 0.86);
 }`;
 const SKY_VS = `attribute vec3 aPos; varying vec2 vP; void main(){ vP = aPos.xy; gl_Position = vec4(aPos.xy, 0.9999, 1.0); }`;
@@ -898,6 +1978,7 @@ void main(){
   c += sunC * pow(max(dot(n, h), 0.0), uMat.y) * uMat.x * smoothstep(-0.05, 0.2, ndl);
   float fr = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   c += vec3(0.78, 0.84, 0.92) * fr * uMat.w * (0.35 + 0.65 * max(n.y, 0.0));
+  if (uDark > 0.0) c = mix(c, col * lamp(n, vW) * 1.25 + vec3(0.02), uDark);
   gl_FragColor = vec4(applyFog(c, vW), 1.0);
 }`;
 let P;
@@ -983,8 +2064,9 @@ function buildTerrain() {
       const pathD = Math.abs(d - (rw + 5.5 + 2 * Math.sin(z * .05)));
       if (pathD < 1.4 && steep < .3) col = col.map((v, k) => mix(v, C.pale[k], .65 * (1 - pathD / 1.4)));
       const rockC = (fbm(x * .05 + 9, y * .2) > .5 ? C.rock : C.rock2);
-      col = col.map((v, k) => mix(v, rockC[k], steep));
+      col = col.map((v, k) => mix(v, rockC[k], Math.max(steep, LV.mtn ? mtnBand(x, z) * .9 : 0)));
       if (y > 30) col = col.map((v, k) => mix(v, C.grass2[k], smooth(.75, .9, n[1]) * .7));
+      if (LV.colorFn) col = LV.colorFn(x, y, z, n, col);
       g.vert(x, y, z, n[0], n[1], n[2], col[0], col[1], col[2]);
     }
   }
@@ -997,7 +2079,7 @@ function buildTerrain() {
 function buildWater() {
   const g = new Geo(), step = 0.5;
   let prevL = -1;
-  for (let z = Z0; z <= Z1; z += step) {
+  for (let z = Z0; z <= Z1 && !LV.coast; z += step) {
     const c = cx(z), w = riverW(z) + 1.8, y = waterY(z);
     const vertical = Math.abs(waterY(z + step) - y) > 0.4 || Math.abs(waterY(z - step) - y) > 0.4;
     const n = vertical ? [0, 0, -1] : [0, 1, 0];
@@ -1005,7 +2087,7 @@ function buildWater() {
     if (prevL >= 0) { g.tri(prevL, l, prevL + 1); g.tri(prevL + 1, l, r); }
     prevL = l;
   }
-  buildLevelWater(g);
+  buildLevelWater(g); buildLevelWater2(g); buildLevelWater3(g);
   return g.upload(P.water);
 }
 function buildSpray() {
@@ -1031,6 +2113,18 @@ function levelClear(x, z, pad = 0) {
   if (LV.view && Math.hypot(x - LV.view.x, z - LV.view.z) < 7) return false;
   if (LV.bluePlace && Math.hypot(x - LV.bluePlace.x, z - LV.bluePlace.z) < 4) return false;
   if (LV.id === 'waterfall' && z > 245 && z < 259) return false;
+  for (const L of (LV.lines || [])) for (const q of L.pts) if (Math.hypot(x - q[0], z - q[2]) < 4.5) return false;
+  if (LV.mtn && LV.summitP && (Math.hypot(x - LV.summitP[0], z - LV.summitP[1]) < 9 || LV.feet.some(f => Math.hypot(x - f[0], z - f[1]) < 4))) return false;
+  if (LV.lionRock && Math.hypot(x - LV.lionRock.x, z - LV.lionRock.z) < 10) return false;
+  if (LV.scramble && Math.hypot(x - LV.scramble.x, z - LV.scramble.z) < 5) return false;
+  if (LV.ledge && (Math.hypot(x - LV.ropeFoot[0], z - LV.ropeFoot[1]) < 6 || Math.abs(z - LV.ledge.z) < 6 && x > LV.ropeFoot[0] - 3 && x < LV.ledge.x + 6)) return false;
+  if (LV.exit2 && Math.hypot(x - LV.exit2.x, z - LV.exit2.z) < 6) return false;
+  if (LV.spawn.x !== undefined && Math.hypot(x - LV.spawn.x, z - LV.spawn.z) < 7) return false;
+  if (LV.id === 'power' && (Math.hypot(x - LV.vil.x, z - LV.vil.z) < 24 || Math.abs(z - 95.5) < 5 || Math.hypot(x - LV.picnic.x, z - LV.picnic.z) < 5)) return false;
+  if (LV.id === 'nature' && (Math.hypot(x - LV.ruins.x, z - LV.ruins.z) < 15 || Math.hypot(x - LV.plaza.x, z - LV.plaza.z) < 13 || Math.hypot(x - LV.camp.x, z - LV.camp.z) < 7)) return false;
+  if (LV.coast && (height(x, z) < LV.seaY + 1.2 || LV.b.some(b => Math.hypot(x - b.x, z - b.z) < 12) || Math.hypot(x - LV.viewP.x, z - LV.viewP.z) < 6)) return false;
+  if (LV.id === 'sightseeing' && (Math.hypot(x - LV.towerP.x, z - LV.towerP.z) < 6 || (z > 492 && x > cx(z) + riverW(z) - 2 && x < cx(z) + riverW(z) + 24) || Math.hypot(x - LV.faroP.x, z - LV.faroP.z) < 6)) return false;
+  if (LV.deerPos && LV.deerPos.some(([dz, side, off]) => Math.hypot(x - (cx(dz) + side * (riverW(dz) + 3.5 + off)), z - dz) < 2.5)) return false;
   return true;
 }
 function buildProps() {
@@ -1126,7 +2220,7 @@ function buildProps() {
       prev = cur;
     }
     // rock buttress under the chute so it reads as part of the cliff
-    for (let z = 343; z < 356; z += 2.2) g.rock(SLIDE.x(z) + .2, SLIDE.y(z) - 1.6, z, 1.5, C.rock2);
+    for (let z = SLIDE.z0 + 9; z < SLIDE.z0 + 22; z += 2.2) g.rock(SLIDE.x(z) + .2, SLIDE.y(z) - 1.6, z, 1.5, C.rock2);
   }
   // rock ledge above the big waterfall (a natural jumping spot)
   if (DECK.za > FAR && DECK.rock) { const D = DECK, dx = D.xb - D.xa, dz = D.zb - D.za, L = Math.hypot(dx, dz), ry = Math.atan2(dx, dz), ux = dx / L, uz = dz / L;
@@ -1144,7 +2238,7 @@ function buildProps() {
     }
     for (const sd of [-1, 1]) { const len = L - 2.5; g.box(D.xa + ux * len / 2 + uz * sd * D.w, D.y + 1.08, D.za + uz * len / 2 - ux * sd * D.w, .07, .07, len, C.rope, ry); }
   }
-  buildLevelProps(g);
+  buildLevelProps(g); buildLevelProps2(g); buildSeaCliff(g); buildLevelProps3(g);
   return g.upload(P.lit);
 }
 function bridgeY(x, base) {
@@ -1251,7 +2345,7 @@ function indexColliders() {
   for (const c of COLLIDERS) { const k = Math.floor(c.z / 4);
     for (const kk of [k - 1, k, k + 1]) { if (!CGRID.has(kk)) CGRID.set(kk, []); CGRID.get(kk).push(c); } }
 }
-const nearC = z => (CGRID && CGRID.get(Math.floor(z / 4))) || [];
+const nearC = z => CAVE_ON ? [] : (CGRID && CGRID.get(Math.floor(z / 4))) || [];
 function groundAt(x, z, y) {
   let h = height(x, z);
   // bridge deck
@@ -1269,7 +2363,7 @@ function blocked(x, z, y) {
   const g = groundAt(x, z, y), h = height(x, z);
   const onDeck = Math.abs(x - MIRADOR.x) < 3.6 && Math.abs(z - MIRADOR.z) < 3.6;   // platform has steps
   if (g - y > (onDeck ? 3.5 : 0.7)) return true;                            // ledge / rock too high: jump!
-  if (Math.abs(g - h) < 0.01 && g > y - 0.05) {             // going uphill on terrain: slope limit
+  if (!CAVE_ON && Math.abs(g - h) < 0.01 && g > y - 0.05) {             // going uphill on terrain: slope limit
     const ny = normalAt(x, z)[1], nearWater = Math.abs(x - cx(z)) < riverW(z) + 4;
     if (ny < (nearWater ? 0.4 : 0.62)) return true;
   }
@@ -1383,6 +2477,7 @@ function applyLang() {
   $('iLead').textContent = t.lead; $('bStart').textContent = t.start; $('iFine').textContent = t.fine;
   $('hudName').textContent = t.name; $('loading').textContent = t.name + '…';
   $('iTitle').innerHTML = esc(t.route + ' ' + LV.num) + ' · <em>' + esc(t.short) + '</em>';
+  $('iLead').textContent = t.lead + ' (' + MODE_UI[lang].modeL + ': ' + MODE_ICON[LV.mode || 'classic'] + ' ' + MODE_UI[lang][LV.mode || 'classic'] + ')';
   renderRoutePick();
   const touch = document.body.classList.contains('touch');
   $('iCtrl').innerHTML = (touch ? t.ctrlT : t.ctrlK).map(([k, v]) => `<kbd>${k}</kbd><span>${v}</span>`).join('');
@@ -1395,7 +2490,7 @@ function renderRoutePick() {
   const t = T(), el = $('routePick');
   el.innerHTML = `<div class="rp-t">${esc(t.choose)}</div>` + ROADMAP.map((id, i) => {
     const ok = !!LEVELS[id];
-    return `<button type="button" data-r="${id}" class="${id === LV.id ? 'on' : ''}" ${ok ? '' : 'disabled'}><b>${i + 1}</b>${esc(ROUTE_NAMES[id])}<small>${ok ? (routeDone(id) ? '✓ ' + esc(t.done) : '') : esc(t.soon)}</small></button>`;
+    return `<button type="button" data-r="${id}" class="${id === LV.id ? 'on' : ''}" ${ok ? '' : 'disabled'}><b>${i + 1}</b>${esc(ROUTE_NAMES[id])}${LEVELS[id] ? ' ' + (MODE_ICON[LEVELS[id].mode] || '') : ''}<small>${ok ? (routeDone(id) ? '✓ ' + esc(t.done) : '') : esc(t.soon)}</small></button>`;
   }).join('');
   el.querySelectorAll('button[data-r]').forEach(b => b.onclick = () => { if (b.dataset.r !== LV.id) loadLevel(b.dataset.r); });
 }
@@ -1409,7 +2504,7 @@ function openMenu(finale) {
 }
 $('bMenu').onclick = () => openMenu();
 $('bResume').onclick = () => { $('menu').classList.add('gone'); S.playing = true; };
-$('bRestart').onclick = () => { S.stamps = {}; try { localStorage.removeItem('avh-stamps-' + LV.id); } catch (e) {} placeAtSpawn(); S.vy = 0; S.mode = null; S.swim = false; S.solved = {}; S.seen = {}; savePz(); S.pzNear = null; S.camYaw = Math.PI; renderStamps(); $('menu').classList.add('gone'); S.playing = true; };
+$('bRestart').onclick = () => { S.stamps = {}; S.raceT = 0; S.tideLvl = 0; TIDE.h = 0; try { localStorage.removeItem('avh-stamps-' + LV.id); localStorage.removeItem('avh-race-cala'); } catch (e) {} placeAtSpawn(); S.vy = 0; S.mode = null; S.swim = false; S.solved = {}; S.seen = {}; savePz(); S.pzNear = null; S.camYaw = Math.PI; renderStamps(); $('menu').classList.add('gone'); S.playing = true; };
 function setCharacter(kind) {
   S.character = kind === 'woman' ? 'woman' : 'man';
   try { localStorage.setItem('avh-character', S.character); } catch (e) {}
@@ -1424,8 +2519,9 @@ $('bPhoto').onclick = togglePhoto;
 /* ----------------------------------------------------------- build */
 let terrain, water, props, spray;
 function placeAtSpawn() {
-  const sp = LV.spawn; S.z = sp.z; S.x = trailX(sp.z, sp.side); S.y = height(S.x, S.z); S.face = sp.face; S.camYaw = sp.camYaw;
+  const sp = LV.spawn; S.z = sp.z; S.x = sp.x ?? trailX(sp.z, sp.side); S.y = height(S.x, S.z); S.face = sp.face; S.camYaw = sp.camYaw;
   S.vy = 0; S.swim = false; S.mode = null; S.onGround = true; S.camPos = [0, 0, 0]; S.speed = 0;
+  CAVE_ON = false; S.trip = 0;
 }
 function loadLevel(id) {
   if (typeof closePuzzle === 'function' && pzOpen) closePuzzle(false);
@@ -1434,12 +2530,15 @@ function loadLevel(id) {
   try { localStorage.setItem('avh-route', LV.id); } catch (e) {}
   [C.rock, C.rock2, C.pale] = LV.rock;
   COLLIDERS.length = 0;
-  terrain = buildTerrain(); props = buildProps(); water = buildWater(); spray = buildSpray(); buildMap(); indexColliders(); initNPCs();
+  terrain = buildTerrain(); props = buildProps(); water = buildWater(); spray = buildSpray(); caveMesh = buildCave(); buildMap(); indexColliders(); initNPCs();
   try { S.stamps = JSON.parse(localStorage.getItem('avh-stamps-' + LV.id) || '{}');
         S.solved = JSON.parse(localStorage.getItem('avh-solved-' + LV.id) || '{}'); S.seen = JSON.parse(localStorage.getItem('avh-seen-' + LV.id) || '{}'); }
   catch (e) { S.stamps = {}; S.solved = {}; S.seen = {}; }
   S.pzNear = null; nbPage = 0;
+  S.raceT = 0; S.tideLvl = 0; S.onSup = false; S.supLeft = false;
+  if (LV.mode === 'tide') { try { S.raceT = +localStorage.getItem('avh-race-cala') || 0; } catch (e) {} if (allStamped()) S.raceT = S.raceT || 0; TIDE.h = clamp(S.raceT / LV.tideDur, 0, 1) * LV.tideMax; S.tideLvl = Math.floor(clamp(S.raceT / LV.tideDur, 0, 1) * 3); }
   placeAtSpawn(); rebuildT(); applyLang();
+  PHOTOS = {}; if (LV.mode === 'photo') setTimeout(() => { try { capturePhotos(); } catch (e) { console.warn(e); } }, 60);
 }
 function build() { loadLevel(ROUTE_ID); }
 
@@ -1447,6 +2546,12 @@ function build() { loadLevel(ROUTE_ID); }
 function update(dt) {
   S.t += dt;
   if (!S.playing) { S.speed *= .8; return; }
+  if (LV.mode === 'tide' && !allStamped()) {
+    S.raceT = (S.raceT || 0) + dt; const f = clamp(S.raceT / LV.tideDur, 0, 1), lvl = Math.floor(f * 3 + 1e-6);
+    TIDE.h = f * LV.tideMax;
+    if (lvl > (S.tideLvl || 0)) { S.tideLvl = lvl; toast('🌊', lvl >= 3 ? MODE_UI[lang].tideHigh : MODE_UI[lang].tideUp, '', 2600); }
+    if (Math.floor(S.raceT) % 5 === 0) try { localStorage.setItem('avh-race-cala', String(S.raceT)); } catch (e) {}
+  }
   updateNPCs(dt);
   if (S.mode) { updateMode(dt); updateCompass(); S.actQ = false; return; }
   const k = S.keys;
@@ -1455,7 +2560,7 @@ function update(dt) {
   let mag = Math.min(1, Math.hypot(ix, iz));
   if (S.joy.on) { ix = S.joy.x; iz = -S.joy.y; mag = Math.min(1, Math.hypot(ix, iz)); }
   const running = (k.ShiftLeft || k.ShiftRight || S.run || (S.joy.on && mag > .92)) && !S.swim;
-  const target = mag < .08 ? 0 : (S.swim ? 2.6 : running ? 7.5 : 3.6) * (S.joy.on ? Math.max(mag, .4) : 1);
+  const target = mag < .08 ? 0 : (S.swim ? 2.6 : S.onSup ? (running ? 6.2 : 4.6) : running ? 7.5 : 3.6) * (S.joy.on ? Math.max(mag, .4) : 1);
   S.speed = mix(S.speed, target, 1 - Math.exp(-dt * 8));
   if (mag > .08) {
     // camera-relative movement: forward = away from camera
@@ -1463,17 +2568,22 @@ function update(dt) {
     const ang = fwdYaw + Math.atan2(-ix, iz);
     let d = ang - S.face; d = Math.atan2(Math.sin(d), Math.cos(d)); S.face += d * (1 - Math.exp(-dt * 12));
   }
-  const vx = Math.sin(S.face) * S.speed * dt, vz = Math.cos(S.face) * S.speed * dt;
+  const vx = Math.sin(S.face) * S.speed * dt, vz = Math.cos(S.face) * S.speed * dt, ox = S.x, oz = S.z;
+  S.helmet = !!(LV.helmet && S.solved.ropes);
   // slide along obstacles
   if (!blocked(S.x + vx, S.z + vz, S.y)) { S.x += vx; S.z += vz; }
   else if (!blocked(S.x + vx, S.z, S.y)) S.x += vx;
   else if (!blocked(S.x, S.z + vz, S.y)) S.z += vz;
   else S.speed *= .5;
+  S.trip = (S.trip || 0) + Math.hypot(S.x - ox, S.z - oz);
 
   const wasSwim = S.swim;
   const g = groundAt(S.x, S.z, S.y), wy = waterY(S.z);
   const deep = g < wy - 1.25;
-  if (deep && S.y <= wy - 1.0) {
+  const hadSup = S.onSup; S.onSup = !!(LV.id === 'cala' && S.solved.sup && !S.solved.beach3 && g < wy - .45);
+  if (S.onSup && !hadSup) toast('🏄', MODE_UI[lang].supOn, '', 2600);
+  if (S.onSup) { S.swim = false; S.y = mix(S.y, wy + .02, 1 - Math.exp(-dt * 10)); S.vy = 0; S.onGround = true; }
+  else if (deep && S.y <= wy - 1.0) {
     if (!S.swim) { S.swim = true; splash(); toast('', T().swim, '', 1600); }
     S.y = mix(S.y, wy - 1.05, 1 - Math.exp(-dt * 6)); S.vy = 0;
     if (S.jumpQ) { S.vy = 5.2; S.y = wy - .9; S.swim = false; }
@@ -1491,23 +2601,42 @@ function update(dt) {
   if (!wasSwim && S.swim && (S.airMax || S.y) - S.y > 5 && S.z > LV.jumpZone[0] && S.z < LV.jumpZone[1]) { toast('💦', T().jumpT, '', 1800); if (S.solved.jump) award('jump'); else setTimeout(() => openPuzzle('jump'), 1200); }
   if (S.onGround || S.swim) S.airMax = S.y; else S.airMax = Math.max(S.airMax ?? S.y, S.y);
   // canyoning: enter the rock slide from the water just above the second waterfall
-  if (SLIDE.z0 > FAR && S.z > SLIDE.z0 - .5 && S.z < 340 && Math.abs(S.x - SLIDE.x(S.z)) < 1.6 && S.y < waterY(S.z) + .8) {
+  if (SLIDE.z0 > FAR && S.z > SLIDE.z0 - .5 && S.z < SLIDE.z0 + 6 && Math.abs(S.x - SLIDE.x(S.z)) < 1.6 && S.y < waterY(S.z) + .8) {
     S.mode = 'slide'; S.sl = { v: Math.max(3, S.speed) }; S.swim = false; toast('', T().slideT, '', 1500);
   }
   // actions: the abseil anchor, or an unsolved stamp box nearby (puzzle opens by itself on arrival)
   const canAb = !S.mode && !S.swim && S.onGround && Math.hypot(S.x - ABSEIL.xt, S.z - ABSEIL.z) < 3.2;
   let near = null;
-  for (const p of STAMP_POS()) if (!p.manual && !S.solved[p.id] && Math.hypot(S.x - p.x, S.z - p.z) < p.r && (!p.swim || S.swim) && (p.minY === undefined || S.y > p.minY)) near = p.id;
+  for (const p of STAMP_POS()) if (!p.manual && !S.solved[p.id] && Math.hypot(S.x - p.x, S.z - p.z) < p.r && (!p.swim || S.swim) && (p.minY === undefined || S.y > p.minY) && !!p.cave === CAVE_ON) near = p.id;
+  if (LV.id === 'cala' && S.solved.beach3 && S.supLeft !== true) { S.supLeft = true; }
   if (near && S.pzNear !== near && !S.mode) { S.pzNear = near; openPuzzle(near); }
   if (!near) S.pzNear = null;
-  const act = canAb ? 'ab' : near ? 'pz' : null, t_ = T();
+  // fixed chains / ropes, and the cave entrance
+  let lineAt = null, lineDir = 0;
+  if (!S.swim && !CAVE_ON) for (const L of (LV.lines || [])) {
+    const a = L.pts[0], b = L.pts[L.pts.length - 1];
+    if (Math.hypot(S.x - a[0], S.z - a[2]) < 1.8 && S.y < a[1] + 1.5) { lineAt = L; lineDir = 1; }
+    else if (Math.hypot(S.x - b[0], S.z - b[2]) < 1.8 && S.y > b[1] - 1) { lineAt = L; lineDir = -1; }
+  }
+  let caveAct = null;
+  if (LV.cavePts && !S.swim) {
+    if (!CAVE_ON && Math.hypot(S.x - LV.hole.x, S.z - LV.hole.z) < 2.4 && S.y > LV.ledge.y - .5) caveAct = 'in';
+    if (CAVE_ON) { const P0 = LV.cavePts[0], PN = LV.cavePts[LV.cavePts.length - 1];
+      if (Math.hypot(S.x - P0[0], S.z - P0[1]) < 2.6) caveAct = 'out'; if (Math.hypot(S.x - PN[0], S.z - PN[1]) < 3.2) caveAct = 'out2'; }
+  }
+  if (lineAt && caveAct === 'in') { const b = lineAt.pts[lineAt.pts.length - 1]; if (Math.hypot(S.x - LV.hole.x, S.z - LV.hole.z) < Math.hypot(S.x - b[0], S.z - b[2])) lineAt = null; else caveAct = null; }
+  const act = canAb ? 'ab' : caveAct ? 'cave' : lineAt ? 'line' : near ? 'pz' : null, t_ = T(), H_ = HARD_UI[lang];
   const pr = $('prompt'), touchUI = document.body.classList.contains('touch');
-  pr.textContent = act === 'ab' ? (touchUI ? t_.abPromptT : t_.abPrompt) : (touchUI ? t_.pzPromptT : t_.pzPrompt);
-  pr.classList.toggle('show', !!act); $('bAct').classList.toggle('show', !!act); $('bAct').textContent = act === 'pz' ? t_.pzBtn : t_.abBtn;
+  pr.textContent = act === 'ab' ? (touchUI ? t_.abPromptT : t_.abPrompt) : act === 'line' ? (lineDir < 0 ? H_.lineDownT : lineAt.kind === 'rope' ? H_.lineRope : H_.lineUpT)
+    : act === 'cave' ? (caveAct === 'in' ? (touchUI ? t_.caveInT : t_.caveIn) : (touchUI ? t_.caveOutT : t_.caveOut)) : (touchUI ? t_.pzPromptT : t_.pzPrompt);
+  pr.classList.toggle('show', !!act); $('bAct').classList.toggle('show', !!act);
+  $('bAct').textContent = act === 'pz' ? t_.pzBtn : act === 'line' ? H_.lineBtn : act === 'cave' ? (caveAct === 'in' ? t_.caveBtnIn : t_.caveBtnOut) : t_.abBtn;
   if (S.actQ && act === 'ab') { if (S.solved.abseil) startAbseil(); else openPuzzle('abseil', startAbseil); }
+  else if (S.actQ && act === 'line') { const L = lineAt, d = lineDir; if (S.solved[L.req]) startLine(L, d); else openPuzzle(L.req, () => { award(L.req); startLine(L, d); }); }
+  else if (S.actQ && act === 'cave') { if (caveAct === 'in') { if (S.solved.hole) caveTravel('in'); else openPuzzle('hole', () => { award('hole'); caveTravel('in'); }); } else caveTravel(caveAct); }
   else if (S.actQ && act === 'pz') openPuzzle(near);
   S.actQ = false;
-  S.anim += dt * (S.swim ? 3.5 : S.speed * 2.1);
+  S.anim += dt * (S.swim ? 3.5 : S.onSup ? 0 : S.speed * 2.1);
 
   // waterfall shower
   for (const f of FALLS) {
@@ -1527,8 +2656,35 @@ function award(id) {
   try { localStorage.setItem('avh-stamps-' + LV.id, JSON.stringify(S.stamps)); } catch (e) {}
   const s = T().stamps.find(x => x[0] === id), n = T().stamps.filter(x => S.stamps[x[0]]).length;
   renderStamps(); setTimeout(() => toast(T().stampGot + ' · ' + n + '/' + T().stamps.length, s[1], '', 3400), 700); chirp(); setTimeout(chirp, 160);
+  S.trip = 0;
+  if (LV.mode === 'photo' && !allStamped()) setTimeout(() => toast('📷', MODE_UI[lang].photoNew, '', 2600), 4300);
+  if (LV.mode === 'tide' && allStamped()) { try { const b = +localStorage.getItem('avh-best-cala') || 1e9; if (S.raceT < b) localStorage.setItem('avh-best-cala', String(S.raceT)); } catch (e) {} }
+  if (LV.hard && !allStamped()) { const ng = nextGoal(), i = STAMP_POS().indexOf(ng); if (ng) setTimeout(() => toast('🧭', HARD_UI[lang].next + ': ' + stampName(ng.id), clueFor(i), 6500), 4300); }
   if (allStamped()) setTimeout(() => { toast('📖', T().finalT, T().finalSub, 3000); }, 4300);
   if (allStamped()) setTimeout(() => openBook('notebook', 99), 6200);
+}
+function startLine(L, dir) {
+  const P = L.pts, seg = []; let tot = 0;
+  for (let i = 0; i < P.length - 1; i++) { const l = Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1], P[i + 1][2] - P[i][2]); seg.push(l); tot += l; }
+  const ux = P[P.length - 1][0] - P[0][0], uz = P[P.length - 1][2] - P[0][2], ul = Math.hypot(ux, uz);
+  S.mode = 'line'; S.ln = { L, seg, tot, s: dir > 0 ? .01 : tot - .01, ux: ux / ul, uz: uz / ul }; S.ab = { walk: 0 }; S.keys = {}; S.swim = false;
+  $('bAct').classList.remove('show');
+}
+function linePoint(ln) {
+  const P = ln.L.pts; let s = ln.s;
+  for (let i = 0; i < ln.seg.length; i++) { if (s <= ln.seg[i] || i === ln.seg.length - 1) { const t = clamp(s / ln.seg[i], 0, 1); return [mix(P[i][0], P[i + 1][0], t), mix(P[i][1], P[i + 1][1], t), mix(P[i][2], P[i + 1][2], t)]; } s -= ln.seg[i]; }
+}
+function caveTravel(kind) {
+  const f = $('fade'); f.classList.add('on'); S.playing = false;
+  setTimeout(() => {
+    const Q = LV.cavePts;
+    if (kind === 'in') { CAVE_ON = true; const a = Q[0], b = Q[1], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      S.x = a[0] + (b[0] - a[0]) / l * 1.4; S.z = a[1] + (b[1] - a[1]) / l * 1.4; S.face = Math.atan2(b[0] - a[0], b[1] - a[1]); }
+    else if (kind === 'out') { CAVE_ON = false; S.x = LV.ledge.x - .3; S.z = LV.ledge.z; S.face = -Math.PI / 2; }
+    else { CAVE_ON = false; S.x = LV.exit2.x; S.z = LV.exit2.z; S.face = -Math.PI / 2; }
+    S.y = groundAt(S.x, S.z); S.vy = 0; S.swim = false; S.onGround = true; S.speed = 0; S.camYaw = S.face + Math.PI; S.camPos = [0, 0, 0]; S.camPitch = .18;
+    setTimeout(() => { f.classList.remove('on'); S.playing = true; }, 250);
+  }, 450);
 }
 function startAbseil() {
   S.mode = 'abseil'; S.ab = { p: 0, b: 0, v: 0, hop: 0, walk: 0, yh: 0 }; S.keys = {};
@@ -1566,9 +2722,19 @@ function updateMode(dt) {
       S.mode = null; S.x = A.xb; S.y = height(A.xb, A.z); S.face = Math.PI / 2; S.speed = 0;
       toast('🧗', T().stamps.find(x => x[0] === 'abseil')[1], '', 1600); award('abseil');
     }
+  } else if (S.mode === 'line') {
+    const ln = S.ln, jy = S.joy.on ? S.joy.y : 0, up = k.KeyW || k.ArrowUp || jy < -.35, dn = k.KeyS || k.ArrowDown || jy > .35;
+    const pr = $('prompt'); pr.textContent = document.body.classList.contains('touch') ? HARD_UI[lang].lineCtlT : HARD_UI[lang].lineCtl; pr.classList.add('show');
+    const v = (up ? 1.25 : 0) - (dn ? 1.25 : 0); ln.s += v * dt; S.ab.walk += Math.abs(v) * dt * 3.4; S.trip = (S.trip || 0) + Math.abs(v * dt);
+    const p = linePoint(ln); S.x = p[0] - ln.ux * .38; S.z = p[2] - ln.uz * .38; S.y = p[1] - .05; S.face = Math.atan2(ln.ux, ln.uz);
+    S.onGround = true; S.vy = 0; S.speed = 0; S.jumpQ = false; S.anim += dt * Math.abs(v) * 2;
+    if (ln.s >= ln.tot || ln.s < 0) {
+      const top = ln.s >= ln.tot, e = top ? ln.L.pts[ln.L.pts.length - 1] : ln.L.pts[0], o = top ? .9 : -1.2;
+      S.mode = null; S.x = e[0] + ln.ux * o; S.z = e[2] + ln.uz * o; S.y = groundAt(S.x, S.z); pr.classList.remove('show'); chirp();
+    }
   } else if (S.mode === 'slide') {
     const sl = S.sl;
-    sl.v = Math.min(15, sl.v + dt * (2.5 + 18 * smooth(340, 350, S.z)));
+    sl.v = Math.min(15, sl.v + dt * (2.5 + 18 * smooth(SLIDE.z0 + 6, SLIDE.z0 + 16, S.z)));
     S.z += sl.v * dt; S.x = SLIDE.x(S.z); S.y = SLIDE.y(S.z) - .02;
     S.face = Math.atan2(SLIDE.x(S.z + .5) - S.x, .5); S.speed = 0; S.anim += dt * 4; S.onGround = true;
     S.camYaw = mix(S.camYaw, Math.PI + .75, 1 - Math.exp(-dt * 2.5)); S.camPitch = mix(S.camPitch, .62, 1 - Math.exp(-dt * 2.5));
@@ -1580,6 +2746,28 @@ function updateMode(dt) {
 }
 function updateCompass() {
   const goal = nextGoal(), comp = $('compass');
+  comp.classList.toggle('hard', !!LV.hard || LV.mode === 'photo' || LV.mode === 'tide');
+  if (LV.mode === 'photo') {
+    const M = MODE_UI[lang]; $('arrow').style.transform = ''; $('arrow').style.display = 'none';
+    const html = goal ? `<b>📷 ${esc(M.photoNext)}</b> · ${tempWord(Math.hypot(goal.x - S.x, goal.z - S.z))}<small>${STAMP_POS().indexOf(goal) + 1}/${STAMP_POS().length} · ${esc(T().hints ? '' : '')}${esc(M.photo)}</small>` : `<b>${esc(T().allDone)}</b>`;
+    if ($('goal').innerHTML !== html) $('goal').innerHTML = html; return;
+  }
+  $('arrow').style.display = '';
+  if (LV.mode === 'tide') {
+    const M = MODE_UI[lang];
+    if (goal) { const dx = goal.x - S.x, dz = goal.z - S.z, a = Math.atan2(dx, dz) - (S.camYaw + Math.PI); $('arrow').style.transform = `rotate(${-a}rad)`; }
+    const s = goal ? T().stamps.find(x => x[0] === goal.id) : null;
+    const html = `<b>${goal ? esc(T().goal(s[1], Math.round(Math.hypot(goal.x - S.x, goal.z - S.z)))) : esc(T().allDone)}</b><small>⏱ ${fmtTime(S.raceT || 0)} · 🌊 ${esc(M.tideW)} +${TIDE.h.toFixed(1)} m</small>`;
+    if ($('goal').innerHTML !== html) $('goal').innerHTML = html; return;
+  }
+  if (LV.hard) {
+    const H = HARD_UI[lang], hd = Math.round(((-S.camYaw * 180 / Math.PI) % 360 + 720) % 360);
+    $('arrow').style.transform = `rotate(${S.camYaw}rad)`;
+    const i = goal ? STAMP_POS().indexOf(goal) : -1;
+    const html = `<b>${hd}° ${dirName(hd)}</b> · ${H.walked} ${Math.round(S.trip || 0)} m` + (goal ? `<small>${esc(H.next)}: ${esc(stampName(goal.id))} · ${esc(clueFor(i))}</small>` : `<small>${esc(T().allDone)}</small>`);
+    if ($('goal').innerHTML !== html) $('goal').innerHTML = html;
+    return;
+  }
   if (goal) {
     const dx = goal.x - S.x, dz = goal.z - S.z, dist = Math.round(Math.hypot(dx, dz));
     const a = Math.atan2(dx, dz) - (S.camYaw + Math.PI);
@@ -1622,7 +2810,11 @@ function common(p, VP) {
   if (p.u.uSun) gl.uniform3fv(p.u.uSun, SUN);
   if (p.u.uCam) gl.uniform3fv(p.u.uCam, S.camPos);
   if (p.u.uTime) gl.uniform1f(p.u.uTime, S.t);
+  if (p.u.uFogK) gl.uniform1f(p.u.uFogK, CAVE_ON ? 1 : (LV.fogK || 1));
+  if (p.u.uTide) gl.uniform1f(p.u.uTide, LV.coast ? TIDE.h : 0);
+  if (p.u.uDark) { gl.uniform1f(p.u.uDark, CAVE_ON ? 1 : 0); gl.uniform3fv(p.u.uLampP, LAMP.p); gl.uniform3fv(p.u.uLampD, LAMP.d); }
 }
+const LAMP = { p: [0, 0, 0], d: [0, 0, 1] };
 function drawPart(VP, m, tint) {
   gl.uniformMatrix4fv(P.lit.u.uM, false, m); gl.uniform3fv(P.lit.u.uTint, tint);
   gl.drawElements(gl.TRIANGLES, unit.n, gl.UNSIGNED_INT, 0);
@@ -1720,6 +2912,7 @@ function drawCharacter(VP, st = S) {
       const wk = ab.p >= 1 && !(ab.hop > 0) ? .16 * Math.sin((ab.walk || 0) + (s < 0 ? 0 : Math.PI)) * Math.min(1, ab.v || 0) : 0;
       th = -.98 + .22 * b + (s < 0 ? .06 : -.06) + wk; kn = .38 - .3 * b + Math.max(0, -wk) * 1.2;   // legs roughly level, perpendicular to the wall
     }
+    else if (mode === 'line') { const w = ((st.ab && st.ab.walk) || 0) + (s < 0 ? 0 : Math.PI); th = -.5 + .32 * Math.sin(w); kn = .5 + .35 * Math.max(0, Math.sin(w)); }
     else if (mode === 'slide') { th = -1.4 + .06 * Math.sin(st.t * 9 + s); kn = .14; }
     else if (air) {
       // A brief take-off tuck, then a relaxed asymmetric landing pose.
@@ -1746,7 +2939,7 @@ function drawCharacter(VP, st = S) {
   const standAnk = R.hipY - R.thigh - R.calf;
   // Swimming: the whole body tips forward into a prone (face-down) position around the chest.
   st.swimBlend = mix(st.swimBlend || 0, swim ? 1 : 0, .09);
-  st.modeP = mix(st.modeP || 0, mode === 'abseil' ? -.6 : mode === 'slide' ? -.45 : 0, .12);
+  st.modeP = mix(st.modeP || 0, mode === 'abseil' ? -.6 : mode === 'line' ? -.3 : mode === 'slide' ? -.45 : 0, .12);
   const sb = st.swimBlend, PIV = [0, 1.15, 0], bodyP = 1.42 * sb + st.modeP;
   const landOff = mode === 'slide' ? .14 / K - .95 : .075 - (st.onGround && !swim ? Math.min(legs[0].ank[1], legs[1].ank[1]) : standAnk);
   const swimOff = .92 / K - PIV[1] + .012 * Math.sin(swimPhase * 2);   // back just breaks the surface
@@ -1837,6 +3030,7 @@ function drawCharacter(VP, st = S) {
       // right hand high on the rope, left hand low as the brake hand by the hip
       if (s > 0) { up = -2.25; fo = up + .35; } else { up = .45; fo = up - .8; }
     }
+    else if (mode === 'line') { const w = ((st.ab && st.ab.walk) || 0); up = (s > 0 ? -1.95 : -1.5) + .22 * Math.sin(w + (s > 0 ? 0 : Math.PI)); fo = up + .45; }
     else if (mode === 'slide') { up = Math.PI - .4 + .18 * Math.sin(st.t * 6 + s); fo = up - .25; }
     else if (air) { up = -.48 + .20 * Math.sin(gait * .55 + s); fo = up - (.62 + .12 * jumpPhase); }
     else if (swim) {
@@ -1945,6 +3139,12 @@ function drawCharacter(VP, st = S) {
     for (const s of [-1, 1]) ell([s * .072, hy - .02, .03], [.008, .024, .014], R.beard, 0, 'hair');  // sideburns
   }
 
+  if (st.helmet) {   // caving helmet with head torch
+    ell([0, hy + .062, -.008], [.11 * hw, .084, .124], [.96, .74, .1], 0, 'nylon');
+    ell([0, hy + .012, -.004], [.112 * hw, .012, .126], [.85, .64, .08], 0, 'nylon');
+    ell([0, hy + .075, .115], [.03, .026, .018], [.25, .25, .27], 0, 'metal');
+    ell([0, hy + .075, .13], [.02, .018, .006], [1, .97, .85], 0, 'metal');
+  }
   headP = 0;
   common(P.lit, VP);
   // ---- soft contact shadow
@@ -1969,6 +3169,7 @@ function render() {
     // Play camera: smooth third-person chase view. Drag on the right side to orbit around the character.
     const bob = S.speed > 0.15 ? Math.sin(S.anim * .5) * .025 * clamp(S.speed / 3.6, 0, 1.4) : 0;
     let chaseDist = clamp(dist || 3.9, 3.1, 8.5);
+    if (CAVE_ON) chaseDist = Math.min(chaseDist, S.swim ? 2.2 : 2.6);
     // pull the camera in when a canyon wall or rock is between it and the character (narrow gorges)
     { const hx = S.x, hy = S.y + 1.55, hz = S.z, sx = Math.sin(yaw) * Math.cos(pitch), sz = Math.cos(yaw) * Math.cos(pitch), sy = Math.sin(pitch);
       for (let i = 1; i <= 10; i++) { const d = chaseDist * i / 10; if (height(hx + sx * d, hz + sz * d) + .5 > hy + sy * d) { chaseDist = Math.max(1.2, d * .8); break; } } }
@@ -1978,6 +3179,7 @@ function render() {
     for (let i = 0; i < 8; i++) { const gh = height(cxp, czp) + .65; if (cyp > gh) break; cyp += .35; }
     // keep the camera above the rock slide so it never looks at it from underneath
     if (czp > SLIDE.z0 && czp < SLIDE.z1 && Math.abs(cxp - SLIDE.x(czp)) < 2.2) cyp = Math.max(cyp, SLIDE.y(czp) + 1.2);
+    if (CAVE_ON) { const sg = caveSeg(cxp, czp); cyp = Math.min(cyp, sg.floor + sg.h * .8 - .25); }
     lookX = S.x; lookY = S.y + 1.05; lookZ = S.z;
   } else {
     // Photo mode keeps a wider cinematic orbit camera.
@@ -1990,28 +3192,40 @@ function render() {
     lookX = tx; lookY = ty; lookZ = tz;
   }
   const k = 1 - Math.exp(-1 / 60 * 14);
+  if (PHOTO_CAM) { S.camPos = PHOTO_CAM.pos.slice(); lookX = PHOTO_CAM.look[0]; lookY = PHOTO_CAM.look[1]; lookZ = PHOTO_CAM.look[2]; } else
   S.camPos = S.camPos[0] === 0 && S.camPos[2] === 0 ? [cxp, cyp, czp] : [mix(S.camPos[0], cxp, k), mix(S.camPos[1], cyp, k), mix(S.camPos[2], czp, k)];
   const V = M4.look(S.camPos, [lookX, lookY, lookZ], [0, 1, 0]);
-  const Pm = M4.persp(innerWidth < innerHeight ? 1.22 : 1.04, aspect, 0.08, 900);
+  const Pm = M4.persp(PHOTO_CAM ? 1.0 : innerWidth < innerHeight ? 1.22 : 1.04, aspect, 0.08, 900);
   const VP = M4.mul(Pm, V);
+  { const fx = lookX - S.camPos[0], fy = lookY - S.camPos[1] - .25, fz = lookZ - S.camPos[2], fl = Math.hypot(fx, fy, fz) || 1;
+    LAMP.p = [S.x, S.y + 1.75, S.z]; LAMP.d = [fx / fl, fy / fl, fz / fl]; }
+  if (CAVE_ON) { FOGC[0] = .02; FOGC[1] = .018; FOGC[2] = .016; } else { FOGC[0] = .96; FOGC[1] = .80; FOGC[2] = .66; }
 
   gl.clearColor(FOGC[0], FOGC[1], FOGC[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
 
   // sky
   gl.disable(gl.CULL_FACE); gl.depthMask(false);
+  if (!CAVE_ON) {
   gl.useProgram(P.sky.p); gl.uniformMatrix4fv(P.sky.u.uInvVP, false, invert(VP)); gl.uniform3fv(P.sky.u.uSun, SUN); gl.uniform3fv(P.sky.u.uFog, FOGC);
   for (let i = 0; i < 4; i++) gl.disableVertexAttribArray(i);
   gl.bindBuffer(gl.ARRAY_BUFFER, skyQuad); gl.enableVertexAttribArray(P.sky.a.pos); gl.vertexAttribPointer(P.sky.a.pos, 3, gl.FLOAT, false, 0, 0);
-  gl.drawArrays(gl.TRIANGLES, 0, 3); gl.depthMask(true);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); }
+  gl.depthMask(true);
 
   // opaque world
   common(P.lit, VP);
   gl.uniformMatrix4fv(P.lit.u.uM, false, M4.ident()); gl.uniform3fv(P.lit.u.uTint, [1, 1, 1]); gl.uniform1f(P.lit.u.uAlpha, 1);
-  gl.uniform1f(P.lit.u.uTerrain, 1); bindMesh(terrain); gl.drawElements(gl.TRIANGLES, terrain.n, gl.UNSIGNED_INT, 0);
-  gl.uniform1f(P.lit.u.uTerrain, 0); gl.disable(gl.CULL_FACE); bindMesh(props); gl.drawElements(gl.TRIANGLES, props.n, gl.UNSIGNED_INT, 0);
-  drawCharacter(VP);
+  if (!CAVE_ON) { gl.uniform1f(P.lit.u.uTerrain, 1); bindMesh(terrain); gl.drawElements(gl.TRIANGLES, terrain.n, gl.UNSIGNED_INT, 0); }
+  gl.uniform1f(P.lit.u.uTerrain, 0); gl.disable(gl.CULL_FACE);
+  if (!CAVE_ON) { bindMesh(props); gl.drawElements(gl.TRIANGLES, props.n, gl.UNSIGNED_INT, 0); }
+  else if (caveMesh) { gl.uniform1f(P.lit.u.uTerrain, 1); bindMesh(caveMesh); gl.drawElements(gl.TRIANGLES, caveMesh.n, gl.UNSIGNED_INT, 0); gl.uniform1f(P.lit.u.uTerrain, 0); }
+  if (!PHOTO_CAM) drawCharacter(VP);
   for (const n of NPCS) if (Math.hypot(n.x - S.camPos[0], n.z - S.camPos[2]) < 70) drawCharacter(VP, n);
+  if (S.onSup && !PHOTO_CAM) { common(P.lit, VP); bindMesh(unit); const wy = waterY(S.z);
+    drawPart(VP, M4.trs(S.x, wy + .03, S.z, S.face, 0, .72, .1, 3.1), [.95, .55, .2]); drawPart(VP, M4.trs(S.x, wy + .09, S.z, S.face, 0, .4, .02, 2.2), [.97, .95, .9]);
+    const sw = Math.sin(S.t * 2.4), sd = S.face + Math.PI / 2, hx = S.x + Math.sin(sd) * .35, hz = S.z + Math.cos(sd) * .35;
+    cyl([hx, S.y + 1.55, hz], [hx + Math.sin(S.face) * sw * .9 + Math.sin(sd) * .5, wy - .3, hz + Math.cos(S.face) * sw * .9 + Math.cos(sd) * .5], .02, [.2, .2, .22]); }
   drawRopes();
   gl.enable(gl.CULL_FACE);
 
@@ -2019,7 +3233,7 @@ function render() {
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.disable(gl.CULL_FACE); gl.depthMask(false);
   common(P.water, VP); bindMesh(water); gl.drawElements(gl.TRIANGLES, water.n, gl.UNSIGNED_INT, 0);
   // spray particles
-  common(P.pt, VP); gl.uniform1f(P.pt.u.uScale, canvas.height * .05); bindMesh(spray); gl.drawElements(gl.POINTS, spray.n, gl.UNSIGNED_INT, 0);
+  if (!CAVE_ON) { common(P.pt, VP); gl.uniform1f(P.pt.u.uScale, canvas.height * .05); bindMesh(spray); gl.drawElements(gl.POINTS, spray.n, gl.UNSIGNED_INT, 0); }
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
 
@@ -2170,7 +3384,7 @@ function buildPuzzle(id, el) {
     setTimeout(() => { try { inp.focus(); } catch (e) {} }, 60);
   } else if (kind === 'simon') {
     const cols = ['#D9774B', '#2BA8A4', '#E8C95B', '#7DA05C'], seq = [];
-    for (let i = 0; i < 5; i++) seq.push(Math.floor(Math.random() * 4));
+    for (let i = 0; i < (PZ[id].len || 5); i++) seq.push(Math.floor(Math.random() * 4));
     el.innerHTML = `<p class="small" id="smHint"></p><div class="planks">${cols.map((c, i) => `<button class="plank" data-i="${i}" style="--c:${c}"></button>`).join('')}</div>`;
     const btns = [...el.querySelectorAll('.plank')]; let pos = 0, busy = true;
     const flash = (i, ms = 420) => { btns[i].classList.add('lit'); pzTimers.push(setTimeout(() => btns[i].classList.remove('lit'), ms)); };
@@ -2242,9 +3456,15 @@ function buildPuzzle(id, el) {
 let bookTab = 'passport', nbPage = 0;
 function nbPages() {
   const t = T(), pages = [{ t: t.nbIntroT, body: `<p>${esc(t.nbIntro)}</p>` }];
+  const ngH = LV.hard ? nextGoal() : null, ngP = LV.mode === 'photo' ? nextGoal() : null;
+  if (ngP) { const i0 = STAMP_POS().indexOf(ngP); }
   for (const p of STAMP_POS()) {
-    const pz = t.pz[p.id];
-    pages.push(S.seen[p.id] || p.id === 'start'
+    const pz = t.pz[p.id], idx = STAMP_POS().indexOf(p), clueH = LV.hard ? `<p class="clue-h">🧭 ${esc(clueFor(idx))}</p><p class="muted">${esc(t.hints[p.id])}</p>` : '';
+    if (ngP && ngP.id === p.id && !S.seen[p.id]) { pages.push({ t: `${idx + 1}. 📷 ${esc(MODE_UI[lang].photoNext)}`, body: PHOTOS[p.id] ? `<img class="photo" src="${PHOTOS[p.id]}" alt=""><p class="muted">${esc(tempWord(Math.hypot(p.x - S.x, p.z - S.z)))}</p>` : '<p class="muted">…</p>' }); continue; }
+    if (LV.mode === 'photo' && !S.seen[p.id] && p.id !== 'start') { pages.push({ t: `${idx + 1}. …`, body: `<p class="muted">${esc(t.nbEmpty)}</p>` }); continue; }
+    if (LV.hard && !S.seen[p.id] && ngH && ngH.id === p.id) { pages.push({ t: `${idx + 1}. ${ICON[p.id]} ${stampName(p.id)}`, body: clueH }); continue; }
+    if (LV.hard && S.seen[p.id]) { pages.push({ t: `${ICON[p.id]} ${stampName(p.id)}`, body: clueH + `<p><b>${esc(pz.t)}</b></p><p>${esc(pz.s)}</p>${PZ[p.id] && PZ[p.id].cipher ? `<p class="cipher sm">${esc(pz.code)}</p>` : ''}<p class="hand">“${esc(pz.c)}”</p>${S.solved[p.id] ? `<p class="ok">✓ ${esc(t.solved)} ${LETTERS[p.id] ? '· ' + LETTERS[p.id] : ''}</p>` : ''}` }); continue; }
+    pages.push(S.seen[p.id] || (p.id === 'start' && !LV.hard)
       ? { t: `${ICON[p.id]} ${stampName(p.id)}`, body: `<p><b>${esc(pz.t)}</b></p><p>${esc(pz.s)}</p>${PZ[p.id] && PZ[p.id].cipher ? `<p class="cipher sm">${esc(pz.code)}</p>` : ''}<p class="hand">“${esc(pz.c)}”</p>${S.solved[p.id] ? `<p class="ok">✓ ${esc(t.solved)} ${LETTERS[p.id] ? '· ' + LETTERS[p.id] : ''}</p>` : ''}` }
       : { t: `${STAMP_POS().indexOf(p) + 1}. …`, body: `<p class="muted">${esc(t.nbEmpty)}</p>` });
   }
@@ -2261,7 +3481,40 @@ const SKETCH = {
     <path d="M232 132 l10 -40 l6 0 l-4 40z" fill="#9fd6d3" stroke="#5b4636" stroke-width="1.2"/>
     <circle cx="246" cy="140" r="5" fill="#D9774B"/><path d="M60 120 q14 -8 26 0" stroke="#5b4636" stroke-dasharray="3 3" fill="none"/>
     <text x="14" y="22" font-family="Georgia, serif" font-size="14" fill="#5b4636" font-style="italic">The Waterfall · 4 cascadas</text></svg>`,
-  waterfall: `<svg class="sketch" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
+  chains: `<svg class="sketch" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
+    <path d="M0 40 L60 34 L70 170 L0 170Z M320 30 L250 36 L262 170 L320 170Z" fill="#c9b49a" stroke="#5b4636" stroke-width="1.4"/>
+    <path d="M70 150 q90 -16 180 0" stroke="#2BA8A4" stroke-width="7" fill="none" opacity=".6"/>
+    <ellipse cx="226" cy="74" rx="12" ry="15" fill="#2a211c" stroke="#5b4636" stroke-width="1.4"/>
+    <path d="M200 140 L214 92 L222 88" stroke="#D9774B" stroke-width="2.2" fill="none"/>
+    <path d="M108 120 l8 -14 l6 0 l6 -10 M140 112 l4 -10 M150 112 l4 -9" stroke="#5b4636" stroke-width="1.6" fill="none"/>
+    <circle cx="120" cy="96" r="4" fill="#E8C95B" stroke="#5b4636"/><path d="M114 96 l-8 -6 M126 96 l8 -6" stroke="#5b4636"/>
+    <text x="14" y="22" font-family="Georgia, serif" font-size="14" fill="#5b4636" font-style="italic">Las Cuevas · casco + linterna</text></svg>`,
+  caves: `<svg class="sketch" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
+    <path d="M0 60 Q80 40 160 62 T320 56 L320 120 Q160 104 0 122Z" fill="#7fc3c0" stroke="#5b4636" stroke-width="1.4"/>
+    <path d="M120 62 L130 122 M190 60 L200 120" stroke="#5b4636" stroke-width="5" opacity=".7"/>
+    <path d="M30 150 h14 v-12 h-14z M50 150 h12 v-16 h-12z M68 150 h16 v-10 h-16z" fill="#fbf8f2" stroke="#5b4636"/>
+    <path d="M250 124 q10 14 30 26" stroke="#2BA8A4" stroke-width="6" fill="none"/>
+    <text x="14" y="22" font-family="Georgia, serif" font-size="14" fill="#5b4636" font-style="italic">El Embalse · The Power of Water</text></svg>`,
+  power: `<svg class="sketch" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
+    <path d="M0 30 L120 26 L150 170 L0 170Z" fill="#c9b49a" stroke="#5b4636" stroke-width="1.4"/><path d="M140 40 q40 20 30 60 t40 70" stroke="#2BA8A4" stroke-width="10" fill="none" opacity=".7"/>
+    <path d="M150 96 v20 M158 94 v24" stroke="#fff" stroke-width="3"/><rect x="40" y="60" width="22" height="16" fill="#fbf8f2" stroke="#5b4636"/><rect x="70" y="72" width="20" height="14" fill="#fbf8f2" stroke="#5b4636"/>
+    <path d="M38 60 l13 -8 l13 8z M68 72 l12 -8 l12 8z" fill="#D9774B"/><rect x="230" y="96" width="26" height="12" fill="#e8c95b" stroke="#5b4636"/><path d="M222 108 h42" stroke="#5b4636" stroke-width="2"/>
+    <text x="14" y="22" font-family="Georgia, serif" font-size="14" fill="#5b4636" font-style="italic">Nature is Here · 📷</text></svg>`,
+  nature: `<svg class="sketch" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
+    <path d="M0 110 Q40 100 70 120 Q100 70 150 80 Q190 120 230 95 Q270 70 320 90 L320 170 L0 170Z" fill="#d8c3a0" stroke="#5b4636" stroke-width="1.4"/>
+    <path d="M0 125 Q60 115 80 135 Q120 100 160 112 Q200 135 240 118 Q280 100 320 112 L320 170 L0 170Z" fill="#7fc3c0" opacity=".9"/>
+    <path d="M180 140 h40 l-6 6 h-28z" fill="#fff" stroke="#5b4636"/><path d="M200 140 v-22" stroke="#5b4636"/><path d="M270 60 q20 -8 40 0 q-20 6 -40 0z" fill="#9fb3bf"/>
+    <text x="14" y="22" font-family="Georgia, serif" font-size="14" fill="#5b4636" font-style="italic">Cala a cala · 🌊 ⏱</text></svg>`,
+  cala: `<svg class="sketch" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
+    <path d="M0 40 L70 36 L80 120 L0 120Z" fill="#c9b49a" stroke="#5b4636" stroke-width="1.4"/><path d="M90 40 v36 M100 40 v36" stroke="#9fd6d3" stroke-width="5"/>
+    <path d="M150 120 L190 60 L230 120Z" fill="#c99a72" stroke="#5b4636"/><rect x="185" y="52" width="10" height="8" fill="#fbf8f2" stroke="#5b4636"/>
+    <path d="M0 130 Q160 118 320 130 L320 170 L0 170Z" fill="#7fc3c0"/><rect x="270" y="80" width="10" height="44" fill="#fbf8f2" stroke="#5b4636"/><rect x="270" y="96" width="10" height="8" fill="#D9774B"/><path d="M266 80 l9 -8 l9 8z" fill="#D9774B"/>
+    <text x="14" y="22" font-family="Georgia, serif" font-size="14" fill="#5b4636" font-style="italic">El Faro · Next Level Sightseeing</text></svg>`,
+  sightseeing: `<svg class="sketch" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
+    <g font-family="Georgia, serif" font-size="12" fill="#5b4636"><text x="20" y="40">1 Buñol</text><text x="20" y="62">2 The Waterfall</text><text x="20" y="84">3 The Chains</text><text x="20" y="106">4 Exploring Caves</text>
+    <text x="170" y="40">5 The Power of Water</text><text x="170" y="62">6 Nature is Here</text><text x="170" y="84">7 Cala to Cala</text><text x="170" y="106">8 Next Level</text></g>
+    <path d="M60 140 l12 10 l22 -26" stroke="#D9774B" stroke-width="5" fill="none"/><text x="110" y="148" font-family="Georgia, serif" font-size="16" fill="#1F4D3A" font-style="italic">¡Enhorabuena!</text></svg>`,
+  waterfall: `<svg class="sketch\" viewBox="0 0 320 170" aria-hidden="true"><rect width="320" height="170" fill="#f3e7cc"/>
     <path d="M0 160 L70 90 L95 104 L140 40 L170 62 L190 30 L240 84 L270 70 L320 120 L320 170 L0 170Z" fill="#c99a72" stroke="#5b4636" stroke-width="1.6"/>
     <path d="M120 70 q8 -6 14 2 M200 52 q8 -8 16 0 M236 90 q6 -6 12 0" stroke="#5b4636" fill="none"/>
     <path d="M150 54 l6 10 l-6 10 l6 10 M176 44 l-6 10 l6 10 M206 60 l6 10 l-6 10" stroke="#5b4636" stroke-width="1.8" fill="none"/>
@@ -2271,7 +3524,10 @@ const SKETCH = {
 };
 function finalPageHTML() {
   const t = T();
-  return `<p class="sub">${esc(t.finalSub)}</p>${SKETCH[LV.id] || ''}<p>${esc(t.finalText)}</p>` +
+  let race = '';
+  if (LV.mode === 'tide') { const M = MODE_UI[lang], tt = S.raceT || 0, m = tt < 540 ? 0 : tt < 840 ? 1 : 2; let best = tt; try { best = Math.min(tt, +localStorage.getItem('avh-best-cala') || tt); } catch (e) {}
+    race = `<p class="medal">${M.medal[m]} · ${esc(M.yourTime)} ${fmtTime(tt)} <small>(${esc(M.best)} ${fmtTime(best)})</small></p>`; }
+  return `<p class="sub">${esc(t.finalSub)}</p>${race}${SKETCH[LV.id] || ''}<p>${esc(t.finalText)}</p>` +
     (LV.next && LEVELS[LV.next] ? `<button class="go" id="bNextRoute">${esc(t.finalBtn)}</button>` : `<p class="muted">${esc(t.finalSoon || '')}</p>`);
 }
 function passportHTML() {
@@ -2287,6 +3543,7 @@ function passportHTML() {
   return `<div class="pp-head"><div><small>${esc(t.traveller)}</small><b>${who}</b></div><div><small>${esc(t.route + ' ' + LV.num + ' · ' + t.short)}</small><b>${T().stamps.filter(x => S.stamps[x[0]]).length} / ${T().stamps.length}</b></div></div>
   <div class="slots">${slots}</div><p class="small">${esc(t.letters)}</p><div class="tiles">${L}</div>`;
 }
+function bookNextPage() { if (!LV.hard && LV.mode !== 'photo') return undefined; const ng = nextGoal(); return ng ? STAMP_POS().indexOf(ng) + 1 : undefined; }
 function renderBook() {
   const t = T();
   $('bkTabP').textContent = t.passport; $('bkTabN').textContent = t.notebook; $('bkClose').textContent = t.close;
@@ -2302,7 +3559,7 @@ function renderBook() {
   $('bkPrev').disabled = nbPage === 0; $('bkNext').disabled = nbPage === pages.length - 1;
 }
 function openBook(tab, page) {
-  bookTab = tab || bookTab; if (page !== undefined) nbPage = page;
+  bookTab = tab || bookTab; if (page !== undefined) nbPage = page; else if ((LV.hard || LV.mode === 'photo') && bookTab === 'notebook' && bookNextPage() !== undefined) nbPage = bookNextPage();
   S.playing = false; S.keys = {}; renderBook(); $('book').classList.remove('gone');
 }
 function closeBook() { $('book').classList.add('gone'); if ($('menu').classList.contains('gone') && !pzOpen) S.playing = true; }
@@ -2358,6 +3615,8 @@ function buildMap() {
     for (let i = 0; i < W; i++) {
       const x = MAPX[0] + (i + .5) / W * (MAPX[1] - MAPX[0]), d = Math.abs(x - c0), ramp = rampAmt(x, z), wd = mix(9, 70, ramp);
       let col = d < rw ? (fall ? FALL : RIV) : d < ws ? FLO : d < ws + wd ? WAL : PLA;
+      if (LV.coast) { const hh = height(x, z); col = hh < LV.seaY - .3 ? RIV : hh < LV.seaY + 2.2 && coveInset(z) > 7 ? PLA : normalAt(x, z)[1] < .7 ? WAL : FLO; }
+      else if (LV.mtn && LV.mtn.noBands && Math.hypot(x - LV.mtn.x, z - LV.mtn.z) < 50) col = col.map((v, k) => mix(v, WAL[k], .35 * (1 - Math.hypot(x - LV.mtn.x, z - LV.mtn.z) / 50)));
       if (d >= ws && d < ws + wd && ramp > .2) col = col.map((v, k) => mix(v, PLA[k], .45));
       const shade = .93 + .07 * fbm(x * .05, z * .05), o = (j * W + i) * 4;
       img.data[o] = col[0] * shade; img.data[o + 1] = col[1] * shade; img.data[o + 2] = col[2] * shade; img.data[o + 3] = 255;
@@ -2368,7 +3627,7 @@ function buildMap() {
   c.lineCap = 'round';
   // trail along the river
   c.strokeStyle = 'rgba(255,248,230,.7)'; c.lineWidth = 1; c.setLineDash([2, 2]); c.beginPath();
-  for (let z = 10; z < 585; z += 4) { const p = P2(cx(z) + riverW(z) + 5.5 + 2 * Math.sin(z * .05), z); z === 10 ? c.moveTo(...p) : c.lineTo(...p); }
+  for (let z = 10; z < 585 && !LV.coast; z += 4) { const p = P2(cx(z) + riverW(z) + 5.5 + 2 * Math.sin(z * .05), z); z === 10 ? c.moveTo(...p) : c.lineTo(...p); }
   c.stroke(); c.setLineDash([]);
   // bridge, slide, plank, abseil rope
   const line = (a, b, col, w) => { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(...a); c.lineTo(...b); c.stroke(); };
@@ -2393,7 +3652,27 @@ function drawMap() {
   const dpr = Math.min(2, devicePixelRatio || 1), w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   const c = cv.getContext('2d'); c.imageSmoothingEnabled = true;
-  c.clearRect(0, 0, w, h); c.drawImage(mapBG, 0, 0, w, h);
+  c.clearRect(0, 0, w, h);
+  if (LV.mode === 'photo') {
+    c.fillStyle = '#f4ead7'; c.fillRect(0, 0, w, h);
+    const goal = nextGoal(), im = goal && PHOTOS[goal.id + '_img'];
+    if (im && im.complete) { const pw = w - 10 * dpr, ph = pw / 1.5; c.fillStyle = '#fff'; c.fillRect(3 * dpr, 3 * dpr, w - 6 * dpr, ph + 7 * dpr + (mapBig ? 22 * dpr : 0)); c.drawImage(im, 5 * dpr, 5 * dpr, pw, ph);
+      if (mapBig) { c.fillStyle = '#5b4636'; c.font = `600 ${Math.round(11 * dpr)}px -apple-system, Segoe UI, sans-serif`; c.textAlign = 'center'; c.fillText(tempWord(Math.hypot(goal.x - S.x, goal.z - S.z)), w / 2, ph + 22 * dpr); } }
+    return;
+  }
+  if (LV.hard) {   // no map with points on compass routes: show a compass card instead
+    c.fillStyle = '#f4ead7'; c.fillRect(0, 0, w, h);
+    const r = Math.min(w, h) * .42, cx0 = w / 2, cy0 = Math.min(h / 2, r + 8 * dpr), yaw = S.camYaw;
+    c.beginPath(); c.arc(cx0, cy0, r, 0, Math.PI * 2); c.fillStyle = '#fffaf0'; c.fill(); c.lineWidth = 1.5 * dpr; c.strokeStyle = '#5b4636'; c.stroke();
+    for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2 + yaw, l = k % 4 ? .1 : .2; c.beginPath(); c.moveTo(cx0 + Math.sin(a) * r * (1 - l), cy0 - Math.cos(a) * r * (1 - l)); c.lineTo(cx0 + Math.sin(a) * r, cy0 - Math.cos(a) * r); c.stroke(); }
+    c.font = `700 ${Math.round(r * .3)}px Georgia, serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    HARD_UI[lang].dirs.filter((_, i) => i % 2 === 0).forEach((d, i) => { const a = i * Math.PI / 2 + yaw; c.fillStyle = i ? '#5b4636' : '#D9774B'; c.fillText(d, cx0 + Math.sin(a) * r * .6, cy0 - Math.cos(a) * r * .6); });
+    c.beginPath(); c.moveTo(cx0, cy0 - r * .95); c.lineTo(cx0 - r * .08, cy0 - r * .75); c.lineTo(cx0 + r * .08, cy0 - r * .75); c.closePath(); c.fillStyle = '#143628'; c.fill();
+    if (h > 2.6 * r) { c.fillStyle = '#5b4636'; c.font = `600 ${Math.round(Math.min(11 * dpr, w * .14))}px -apple-system, Segoe UI, sans-serif`; c.fillText(Math.round(((-yaw * 180 / Math.PI) % 360 + 720) % 360) + '°', cx0, cy0 + r + 14 * dpr);
+      if (mapBig) { c.font = `500 ${Math.round(10 * dpr)}px -apple-system, Segoe UI, sans-serif`; c.fillText(HARD_UI[lang].noMap, cx0, cy0 + r + 32 * dpr); } }
+    return;
+  }
+  c.drawImage(mapBG, 0, 0, w, h);
   const P2 = (x, z) => [(x - MAPX[0]) / (MAPX[1] - MAPX[0]) * w, (z - Z0) / (Z1 - Z0) * h];
   const goal = nextGoal(), sz = (mapBig ? 7 : 4.2) * dpr, st = T().stamps;
   STAMP_POS().forEach((p, i) => {
@@ -2429,7 +3708,7 @@ setTimeout(() => {
   $('loading').classList.add('gone');
   requestAnimationFrame(frame);
 }, 30);
-window.__AVH = S; window.__AVHg = groundAt; window.__AVHl = { loadLevel, lv: () => LV, st: () => STAMP_POS(), npcs: () => NPCS, height, waterY, cx, riverW, wallStart, blocked: (typeof blocked !== 'undefined' ? blocked : null), openPuzzle, award, T };
+window.__AVH = S; window.__AVHg = groundAt; window.__AVHl = { deck: () => DECK, onDeck: (x, z) => onDeck(x, z), cam: (p, l) => { PHOTO_CAM = p ? { pos: p, look: l } : null; }, photos: () => PHOTOS, caveTravel, startLine, clueFor, caveSeg, cave: () => CAVE_ON, loadLevel, lv: () => LV, st: () => STAMP_POS(), npcs: () => NPCS, height, waterY, cx, riverW, wallStart, blocked: (typeof blocked !== 'undefined' ? blocked : null), openPuzzle, award, T };
 window.__AVHt = { height, normalAt, cx, riverW, wallStart, MIRADOR, blocked, ABSEIL, SLIDE, DECK, waterY, openPuzzle, openBook, COLLIDERS }; // for testing
 })();
 </script>
